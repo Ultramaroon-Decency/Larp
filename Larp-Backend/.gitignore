@@ -1,0 +1,25 @@
+cat > .gitignore << 'EOF'
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Logs
+*.log
+logs.txt
+
+# macOS
+.DS_Store
+EOF

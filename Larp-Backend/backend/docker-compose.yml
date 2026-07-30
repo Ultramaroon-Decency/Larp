@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  # ── 1. FastAPI Backend API Service & Alembic Runner ─────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: research_backend_api
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_NAME=AI Research Platform
+      - APP_ENV=production
+      - LOG_LEVEL=INFO
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=researchdb
+      - DATABASE_URL=postgresql+asyncpg://user:password@postgres:5432/researchdb
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_URL=redis://redis:6379/0
+      - JWT_SECRET_KEY=production_secret_key_change_me_32_bytes_min
+      - JWT_ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=60
+      - REFRESH_TOKEN_EXPIRE_DAYS=7
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:8000/api/v1/health || exit 1" ]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # ── 2. PostgreSQL 16 Relational Database ───────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: research_postgres_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: researchdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U user -d researchdb" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── 3. Redis 7 Cache & PubSub Server ────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: research_redis_cache
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local

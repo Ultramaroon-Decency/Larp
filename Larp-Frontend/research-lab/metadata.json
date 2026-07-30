@@ -1,0 +1,6 @@
+{
+  "name": "Research Lab",
+  "description": "An academic utility research bot for synthesizing queries, analyzing sources, and archiving technical literature.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
