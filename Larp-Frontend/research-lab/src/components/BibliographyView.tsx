@@ -80,14 +80,18 @@ export const BibliographyView: React.FC<BibliographyViewProps> = ({
               >
                 <div className="flex justify-between items-start mb-3 gap-2">
                   <h3 className="text-[16px] font-bold text-[#0F172A] m-0 leading-snug line-clamp-2 pr-2 group-hover:text-[#2563EB] transition-colors">
-                    <a
-                      href={source.url || '#'}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="outline-none"
-                    >
-                      {source.title}
-                    </a>
+                    {source.url ? (
+                      <a
+                        href={source.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="outline-none hover:underline"
+                      >
+                        {source.title}
+                      </a>
+                    ) : (
+                      source.title
+                    )}
                   </h3>
                   <div className="shrink-0 bg-blue-50 border border-blue-100 text-[#003EA8] px-2 py-0.5 rounded text-[12px] font-bold font-mono flex items-center gap-1">
                     <span className="material-symbols-outlined text-[14px]">verified</span>

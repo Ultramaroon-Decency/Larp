@@ -1,5 +1,32 @@
 export type ResearchMode = 'quick' | 'deep';
 
+export type PipelineStepStatus = 'pending' | 'running' | 'done' | 'error';
+
+/** One step in the 5-stage research pipeline. */
+export interface PipelineStep {
+  id: string;
+  name: string;
+  description: string;
+  api: string;
+  status: PipelineStepStatus;
+  cost?: string;
+  duration?: number;
+  error?: string;
+}
+
+/** x402 payment receipt emitted per API call in the pipeline. */
+export interface PaymentReceipt {
+  stepId: string;
+  stepName: string;
+  amount: string;      // e.g. "0.0025" USDC
+  currency: string;
+  network: string;
+  txHash: string;
+  from: string;        // agent wallet
+  payTo: string;       // API provider wallet
+  timestamp: string;
+}
+
 export interface Source {
   id: string;
   index: number;
@@ -52,6 +79,12 @@ export interface ResearchProject {
   messages: ChatMessage[];
   sources: Source[];
   attachedFiles: AttachedFile[];
+  /** Pipeline steps recorded after synthesis (shows what the agent did). */
+  pipelineSteps?: PipelineStep[];
+  /** x402 payment receipts from this research session. */
+  payments?: PaymentReceipt[];
+  /** Total USDC cost of this research (e.g. "0.0091"). */
+  totalCost?: string;
 }
 
 export interface Collection {

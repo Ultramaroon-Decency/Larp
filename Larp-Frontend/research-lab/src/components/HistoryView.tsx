@@ -103,6 +103,10 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
 
                   <button
                     type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectProject(p);
+                    }}
                     className="px-4 py-2 bg-[#0F172A] text-white font-bold text-[12px] uppercase tracking-wider rounded-md hover:bg-slate-800 transition-colors flex items-center gap-1"
                   >
                     Resume

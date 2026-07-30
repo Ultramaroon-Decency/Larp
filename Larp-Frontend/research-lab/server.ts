@@ -1,169 +1,311 @@
+// server.ts — Research Lab Multi-Step Agent Server
+//
+// Endpoints:
+//   GET  /api/health                  — Health check
+//   GET  /api/research/stream/:id     — SSE pipeline progress stream
+//   POST /api/research/synthesize     — Trigger 5-step research pipeline
+//   GET  /api/payments/log            — Global payment ledger
+//   POST /api/export/bibtex           — BibTeX export
+
+// ─── Load environment variables (must be first) ───────────────────────────────
+// Uses Node's built-in fs instead of dotenv to avoid ESM hoisting issues.
+// Reads .env.local first, then .env as fallback.
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+function loadEnvFile(filename: string): void {
+  const filePath = join(process.cwd(), filename);
+  if (!existsSync(filePath)) return;
+  try {
+    const content = readFileSync(filePath, 'utf-8');
+    for (const line of content.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIndex = trimmed.indexOf('=');
+      if (eqIndex === -1) continue;
+      const key = trimmed.substring(0, eqIndex).trim();
+      const rawVal = trimmed.substring(eqIndex + 1).trim();
+      // Strip surrounding quotes if present
+      const value = rawVal.replace(/^["']|["']$/g, '');
+      if (key && !process.env[key]) {
+        process.env[key] = value;
+      }
+    }
+  } catch (err) {
+    console.warn(`[env] Could not load ${filename}:`, err);
+  }
+}
+
+loadEnvFile('.env.local'); // local secrets — git-ignored
+loadEnvFile('.env');       // shared defaults
+
 import express from 'express';
 import path from 'path';
+import { EventEmitter } from 'node:events';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI, Type } from '@google/genai';
+import Groq from 'groq-sdk';
+import {
+  runResearchPipeline,
+  createInitialSteps,
+} from './orchestrator/researchPipeline.js';
+import type { PipelineEvent, PaymentReceipt } from './orchestrator/types.js';
 
+// ─── Session store for SSE connections ───────────────────────────────────────
+// Each active research session has an EventEmitter + event buffer so that
+// events emitted before the SSE connection is open are not lost.
+
+interface SessionStore {
+  emitter: EventEmitter;
+  buffer: string[];       // events queued before SSE connects
+  created: number;        // timestamp for cleanup
+}
+
+const sessions = new Map<string, SessionStore>();
+
+// Clean up stale sessions older than 15 minutes
+setInterval(() => {
+  const cutoff = Date.now() - 15 * 60 * 1000;
+  for (const [id, session] of sessions) {
+    if (session.created < cutoff) sessions.delete(id);
+  }
+}, 60_000);
+
+function getOrCreateSession(sessionId: string): SessionStore {
+  if (!sessions.has(sessionId)) {
+    sessions.set(sessionId, {
+      emitter: new EventEmitter(),
+      buffer: [],
+      created: Date.now(),
+    });
+  }
+  return sessions.get(sessionId)!;
+}
+
+function emitToSession(sessionId: string, event: PipelineEvent) {
+  const session = getOrCreateSession(sessionId);
+  const payload = JSON.stringify(event);
+  session.buffer.push(payload);
+  session.emitter.emit('pipeline_event', payload);
+}
+
+// ─── Global payment ledger (in-memory across all sessions) ───────────────────
+const globalPaymentLedger: (PaymentReceipt & { sessionId: string })[] = [];
+
+// ─── Groq client factory ──────────────────────────────────────────────────────
+function getGroqClient(): Groq | null {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) return null;
+  return new Groq({ apiKey });
+}
+
+// ─── Server bootstrap ─────────────────────────────────────────────────────────
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   app.use(express.json({ limit: '10mb' }));
 
-  // Initialize Gemini Client lazily or safely
-  function getGeminiClient() {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return null;
-    return new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build'
-        }
-      }
-    });
-  }
-
-  // Health endpoint
+  // ── GET /api/health ──────────────────────────────────────────────────────────
   app.get('/api/health', (_req, res) => {
-    res.json({ status: 'ok', time: new Date().toISOString() });
+    res.json({
+      status: 'ok',
+      time: new Date().toISOString(),
+      groqConfigured: !!process.env.GROQ_API_KEY,
+      tavilyConfigured: !!process.env.TAVILY_API_KEY,
+      walletMode: process.env.AGENT_WALLET_PRIVATE_KEY ? 'real' : 'simulation',
+    });
   });
 
-  // Research Synthesis Endpoint
+  // ── GET /api/research/stream/:sessionId ──────────────────────────────────────
+  // Server-Sent Events endpoint. The frontend opens this BEFORE POSTing to
+  // /api/research/synthesize to receive real-time pipeline step events.
+  app.get('/api/research/stream/:sessionId', (req, res) => {
+    const { sessionId } = req.params;
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');     // disable Nginx buffering
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.flushHeaders();
+
+    const session = getOrCreateSession(sessionId);
+
+    // Flush any events that arrived before SSE was connected
+    for (const payload of session.buffer) {
+      res.write(`data: ${payload}\n\n`);
+    }
+
+    // Send an initial ping to confirm the connection is live
+    res.write(
+      `data: ${JSON.stringify({ type: 'ping', sessionId, timestamp: new Date().toISOString() })}\n\n`
+    );
+
+    // Stream future events
+    const handler = (payload: string) => {
+      res.write(`data: ${payload}\n\n`);
+    };
+    session.emitter.on('pipeline_event', handler);
+
+    req.on('close', () => {
+      session.emitter.off('pipeline_event', handler);
+    });
+  });
+
+  // ── POST /api/research/synthesize ────────────────────────────────────────────
+  // Main research endpoint. Accepts a sessionId for SSE progress streaming.
+  // Runs the 5-step pipeline when Gemini is configured; falls back to mock
+  // data if GEMINI_API_KEY is absent.
   app.post('/api/research/synthesize', async (req, res) => {
-    const { query, mode, attachedFiles } = req.body;
+    const {
+      query,
+      mode = 'quick',
+      attachedFiles = [],
+      sessionId,
+    } = req.body as {
+      query: string;
+      mode?: 'quick' | 'deep';
+      attachedFiles?: { name: string }[];
+      sessionId?: string;
+    };
 
     if (!query || typeof query !== 'string') {
       res.status(400).json({ error: 'Query parameter is required.' });
       return;
     }
 
-    try {
-      const ai = getGeminiClient();
-      if (ai) {
-        const isDeep = mode === 'deep';
-        const systemPrompt = `You are Research Lab, a world-class academic research bot and literature synthesis system.
-Analyze the user's research objective, thesis question, or technical query.
-Search real scientific literature and web references using grounding.
-Provide a clear, authoritative, and structured literature synthesis.
+    const ai = getGroqClient();
 
-Mode: ${isDeep ? 'Deep Dive (In-depth analysis, multiple sub-sections, code/math snippets if applicable, 3-5 citations)' : 'Quick Scan (Concise summary, 2-3 key findings, 2-3 citations)'}.
-${attachedFiles?.length ? `User provided reference files: ${attachedFiles.map((f: { name: string }) => f.name).join(', ')}` : ''}
+    if (ai && sessionId) {
+      // ── Full multi-step pipeline with SSE progress ────────────────────────
+      try {
+        console.log(`\n[Server] 🚀 Starting pipeline for session ${sessionId}`);
+        console.log(`[Server] Query: "${query.substring(0, 80)}..."`);
 
-You MUST return your answer strictly as JSON with this exact schema:
-{
-  "title": "A concise, formal paper-style heading for this synthesis",
-  "overview": "A detailed 1-2 paragraph synthesis text containing inline citations like [1], [2], [3] matching the sources array.",
-  "sections": [
-    {
-      "heading": "Subheading name e.g. Breakthroughs in Error Correction",
-      "body": "Detailed paragraph expanding on this sub-topic with inline citations [1], [2]",
-      "bulletPoints": ["Key finding 1", "Key finding 2"]
-    }
-  ],
-  "codeSnippet": "Optional snippet of code, formula, or config (e.g. Python, LaTeX, pseudocode, QubitRegistry setup) if relevant, or empty string",
-  "sources": [
-    {
-      "index": 1,
-      "title": "Title of paper or reference",
-      "authors": "Author names e.g. Smith, J. et al.",
-      "year": 2024,
-      "journal": "Journal name or publication venue e.g. Nature Physics",
-      "relevance": 0.98,
-      "doi": "10.1038/s41558-024-0012",
-      "url": "https://doi.org/10.1038/s41558-024-0012",
-      "tags": ["Peer Reviewed", "PDF Available"],
-      "abstract": "Short 1-2 sentence summary of paper"
-    }
-  ]
-}`;
+        const result = await runResearchPipeline(
+          query,
+          mode,
+          sessionId,
+          ai,
+          (event) => {
+            emitToSession(sessionId, event);
 
-        const response = await ai.models.generateContent({
-          model: 'gemini-3.6-flash',
-          contents: query,
-          config: {
-            systemInstruction: systemPrompt,
-            tools: [{ googleSearch: {} }],
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                title: { type: Type.STRING },
-                overview: { type: Type.STRING },
-                sections: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      heading: { type: Type.STRING },
-                      body: { type: Type.STRING },
-                      bulletPoints: {
-                        type: Type.ARRAY,
-                        items: { type: Type.STRING }
-                      }
-                    }
-                  }
-                },
-                codeSnippet: { type: Type.STRING },
-                sources: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      index: { type: Type.INTEGER },
-                      title: { type: Type.STRING },
-                      authors: { type: Type.STRING },
-                      year: { type: Type.INTEGER },
-                      journal: { type: Type.STRING },
-                      relevance: { type: Type.NUMBER },
-                      doi: { type: Type.STRING },
-                      url: { type: Type.STRING },
-                      tags: {
-                        type: Type.ARRAY,
-                        items: { type: Type.STRING }
-                      },
-                      abstract: { type: Type.STRING }
-                    }
-                  }
-                }
-              }
+            // Also record payments in the global ledger
+            if (event.type === 'payment' && event.payment) {
+              globalPaymentLedger.push({ ...event.payment, sessionId });
             }
           }
+        );
+
+        // Emit completion event
+        emitToSession(sessionId, {
+          type: 'complete',
+          sessionId,
+          timestamp: new Date().toISOString(),
+          totalCost: result.totalCost,
         });
 
-        const jsonText = response.text?.trim() || '';
-        const parsed = JSON.parse(jsonText);
-        res.json(parsed);
+    console.log(
+      `[Server] ✅ Pipeline complete — cost: $${result.totalCost} USDC (simulated)\n`
+    );
+
+        res.json(result);
         return;
+      } catch (err) {
+        console.error('[Server] Pipeline error:', err);
+
+        if (sessionId) {
+          emitToSession(sessionId, {
+            type: 'pipeline_error',
+            sessionId,
+            timestamp: new Date().toISOString(),
+            error: 'Pipeline encountered an error — using fallback report',
+          });
+        }
+        // Fall through to fallback
       }
-    } catch (err) {
-      console.warn('Gemini API call warning/fallback:', err);
     }
 
-    // Fallback synthesis generator if API key is not present or error occurs
-    const isDeep = mode === 'deep';
-    const fallbackResponse = generateFallbackResearch(query, isDeep);
-    res.json(fallbackResponse);
+    if (ai && !sessionId) {
+      // ── Legacy single-pass mode (no sessionId, backwards compatible) ────────
+      try {
+        const isDeep = mode === 'deep';
+        const completion = await ai.chat.completions.create({
+          model: 'llama-3.3-70b-versatile',
+          messages: [
+            {
+              role: 'system',
+              content: `You are Research Lab, an academic research synthesis system. Mode: ${isDeep ? 'Deep Dive (4-5 sections, 5+ citations)' : 'Quick Scan (2-3 sections, 3 citations)'}. Return strict JSON.`
+            },
+            { role: 'user', content: query }
+          ],
+          response_format: { type: 'json_object' },
+        });
+        const jsonText = completion.choices[0]?.message?.content ?? '{}';
+        const parsed = JSON.parse(jsonText);
+        res.json({ ...parsed, pipelineSteps: [], payments: [], totalCost: '0.0000' });
+        return;
+      } catch (err) {
+        console.warn('[Server] Legacy Groq call warning:', err);
+      }
+    }
+
+    // ── Fallback: mock response (no API key or all attempts failed) ─────────
+    const fallback = generateFallbackResearch(query, mode === 'deep');
+    res.json({ ...fallback, pipelineSteps: createInitialSteps(), payments: [], totalCost: '0.0000' });
   });
 
-  // BibTeX Export Endpoint
+  // ── GET /api/payments/log ─────────────────────────────────────────────────
+  // Returns the global in-memory payment ledger across all sessions.
+  app.get('/api/payments/log', (_req, res) => {
+    const totalSpent = globalPaymentLedger
+      .reduce((sum, r) => sum + parseFloat(r.amount), 0)
+      .toFixed(4);
+
+    res.json({
+      mode: process.env.AGENT_WALLET_PRIVATE_KEY ? 'real' : 'simulation',
+      totalTransactions: globalPaymentLedger.length,
+      totalSpentUSDC: totalSpent,
+      receipts: globalPaymentLedger.slice(-100), // last 100
+    });
+  });
+
+  // ── POST /api/export/bibtex ───────────────────────────────────────────────
   app.post('/api/export/bibtex', (req, res) => {
-    const { sources, title } = req.body;
+    const { sources, title } = req.body as {
+      sources: {
+        index?: number;
+        authors?: string;
+        year?: number;
+        title?: string;
+        journal?: string;
+        doi?: string;
+        url?: string;
+      }[];
+      title?: string;
+    };
+
     if (!sources || !Array.isArray(sources)) {
       res.status(400).send('Invalid sources array');
       return;
     }
 
-    let bibtexContent = `% BibTeX Bibliography Export for "${title || 'Research Lab Synthesis'}"\n% Generated on ${new Date().toLocaleDateString()}\n\n`;
+    let bibtexContent = `% BibTeX Bibliography Export for "${title ?? 'Research Lab Synthesis'}"\n`;
+    bibtexContent += `% Generated on ${new Date().toLocaleDateString()}\n`;
+    bibtexContent += `% Pipeline: Decompose → Search → Fact-Check → Enrich → Synthesize\n\n`;
 
-    sources.forEach((s: any, idx: number) => {
-      const citeKey = `source_${s.index || idx + 1}_${(s.authors || 'author').split(' ')[0].toLowerCase().replace(/[^a-z]/g, '')}_${s.year || 2024}`;
-      bibtexContent += `@article{${citeKey},\n`;
-      bibtexContent += `  title = {${s.title || 'Untitled Research'}},\n`;
-      bibtexContent += `  author = {${s.authors || 'Anonymous'}},\n`;
-      bibtexContent += `  journal = {${s.journal || 'Academic Repository'}},\n`;
-      bibtexContent += `  year = {${s.year || 2024}},\n`;
-      if (s.doi) bibtexContent += `  doi = {${s.doi}},\n`;
-      if (s.url) bibtexContent += `  url = {${s.url}},\n`;
+    sources.forEach((s, idx) => {
+      const key = `source_${s.index ?? idx + 1}_${(s.authors ?? 'author')
+        .split(' ')[0]
+        .toLowerCase()
+        .replace(/[^a-z]/g, '')}_${s.year ?? 2024}`;
+      bibtexContent += `@article{${key},\n`;
+      bibtexContent += `  title   = {${s.title ?? 'Untitled Research'}},\n`;
+      bibtexContent += `  author  = {${s.authors ?? 'Anonymous'}},\n`;
+      bibtexContent += `  journal = {${s.journal ?? 'Academic Repository'}},\n`;
+      bibtexContent += `  year    = {${s.year ?? 2024}},\n`;
+      if (s.doi) bibtexContent += `  doi     = {${s.doi}},\n`;
+      if (s.url) bibtexContent += `  url     = {${s.url}},\n`;
       bibtexContent += `}\n\n`;
     });
 
@@ -172,11 +314,11 @@ You MUST return your answer strictly as JSON with this exact schema:
     res.send(bibtexContent);
   });
 
-  // Serve frontend
+  // ── Serve frontend ────────────────────────────────────────────────────────
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
-      appType: 'spa'
+      appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
@@ -188,17 +330,22 @@ You MUST return your answer strictly as JSON with this exact schema:
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Research Lab server running at http://0.0.0.0:${PORT}`);
+    console.log(`\n🔬 Research Lab server running at http://0.0.0.0:${PORT}`);
+    console.log(`💳 x402 payment mode: ${process.env.AGENT_WALLET_PRIVATE_KEY ? 'REAL (Base Sepolia)' : 'SIMULATION'}`);
+    console.log(`🤖 Groq API: ${process.env.GROQ_API_KEY ? 'configured' : '⚠  NOT SET (fallback mode)'}`);
+    console.log(`🔍 Tavily Search: ${process.env.TAVILY_API_KEY ? 'configured' : '⚠  NOT SET (using model knowledge)'}\n`);
   });
 }
 
+// ─── Fallback research generator ──────────────────────────────────────────────
+// Used when GEMINI_API_KEY is absent or when the pipeline fails entirely.
 function generateFallbackResearch(query: string, isDeep: boolean) {
   const queryLower = query.toLowerCase();
 
   let title = `Synthesis Analysis: ${query.length > 40 ? query.substring(0, 40) + '...' : query}`;
   if (queryLower.includes('quantum')) {
     title = 'Advancements in Quantum Computing: 2024 Analysis';
-  } else if (queryLower.includes('carbon') || queryLower.includes('climate') || queryLower.includes('remote work')) {
+  } else if (queryLower.includes('carbon') || queryLower.includes('climate')) {
     title = 'Synthesized Analysis: Atmospheric & Socioeconomic Vectors';
   } else if (queryLower.includes('battery') || queryLower.includes('solid state')) {
     title = 'Synthesis Report: Solid State Batteries & Electrolytes';
@@ -206,33 +353,30 @@ function generateFallbackResearch(query: string, isDeep: boolean) {
 
   return {
     title,
-    overview: `A rigorous synthesis of current peer-reviewed literature regarding "${query}". Recent developments in experimental protocols and algorithmic modeling demonstrate significant progress in overcoming historical rate-limiting boundaries [1]. Modern frameworks prioritize system-level fidelity and empirical validation [2].`,
+    overview: `A rigorous synthesis of current peer-reviewed literature regarding "${query}". Recent developments demonstrate significant progress in overcoming historical rate-limiting boundaries [1]. Modern frameworks prioritise system-level fidelity and empirical validation [2].`,
     sections: [
       {
         heading: 'Primary Theoretical Foundations',
-        body: 'Empirical datasets across leading research laboratories indicate a marked convergence towards standardized benchmarking protocols. The integration of high-throughput automated synthesis has accelerated experimental turn-around by an estimated 3.4x [1].',
+        body: 'Empirical datasets across leading research laboratories indicate a marked convergence towards standardised benchmarking protocols. High-throughput automated synthesis has accelerated experimental turn-around by an estimated 3.4× [1].',
         bulletPoints: [
           'High-Fidelity Benchmark Thresholds: Cross-validation reveals reduced noise floor variance under controlled environmental parameters.',
-          'Scalable Integration Architecture: Inter-module coupling efficiencies crossed critical operational milestones [2].'
-        ]
+          'Scalable Integration Architecture: Inter-module coupling efficiencies crossed critical operational milestones [2].',
+        ],
       },
       {
         heading: isDeep ? 'Quantitative Methodology & Framework' : 'Summary & Strategic Implications',
         body: isDeep
-          ? 'Analytical models validate sub-linear computational scaling when utilizing distributed processing pipelines. Secondary telemetry confirms interfacial stability over extended operational durations [3].'
-          : 'Further exploration of boundary conditions and longitudinal trial data is recommended for full institutional deployment.'
-      }
+          ? 'Analytical models validate sub-linear computational scaling when using distributed processing pipelines. Secondary telemetry confirms interfacial stability over extended operational durations [3].'
+          : 'Further exploration of boundary conditions and longitudinal trial data is recommended for full institutional deployment.',
+      },
     ],
     codeSnippet: isDeep
-      ? `// Research Lab Analytical Pipeline
-Pipeline.Initialize(query_vector: "${query.substring(0, 30)}...")
-DataMesh.SyncGroundingSources(threshold: 0.85)
-Synthesis.EvaluateConfidenceScore(iterations: 1000)`
+      ? `// Research Lab Analytical Pipeline (Fallback Mode)\nPipeline.Initialize(query_vector: "${query.substring(0, 30)}...")\nDataMesh.SyncGroundingSources(threshold: 0.85)\nSynthesis.EvaluateConfidenceScore(iterations: 1000)`
       : '',
     sources: [
       {
         index: 1,
-        title: `Comprehensive Literature Review on ${query.split(' ')[0] || 'Research Objective'}`,
+        title: `Comprehensive Literature Review on ${query.split(' ')[0] ?? 'Research Objective'}`,
         authors: 'Smith, J., Doe, A. et al.',
         year: 2024,
         journal: 'Nature Research Synthesis, Vol. 28',
@@ -240,11 +384,11 @@ Synthesis.EvaluateConfidenceScore(iterations: 1000)`
         doi: '10.1038/s41558-2024-0018',
         url: 'https://doi.org/10.1038/s41558-2024-0018',
         tags: ['Peer Reviewed', 'PDF Available'],
-        abstract: 'Comprehensive meta-analysis compiling observational and empirical trial results across 42 institutional datasets.'
+        abstract: 'Comprehensive meta-analysis compiling observational and empirical trial results across 42 institutional datasets.',
       },
       {
         index: 2,
-        title: `Systemic Benchmarking and Algorithmic Proofs in ${query.split(' ')[1] || 'Domain Studies'}`,
+        title: `Systemic Benchmarking and Algorithmic Proofs in ${query.split(' ')[1] ?? 'Domain Studies'}`,
         authors: 'Johnson, M., Patel, R.',
         year: 2024,
         journal: 'IEEE Transactions on Advanced Analytics',
@@ -252,11 +396,11 @@ Synthesis.EvaluateConfidenceScore(iterations: 1000)`
         doi: '10.1109/TAA.2024.99210',
         url: 'https://doi.org/10.1109/TAA.2024.99210',
         tags: ['Technical Report'],
-        abstract: 'Architectural specification and benchmark suite testing under extreme boundary conditions.'
+        abstract: 'Architectural specification and benchmark suite testing under extreme boundary conditions.',
       },
       {
         index: 3,
-        title: `Pre-print: Longitudinal Field Observations and Predictive Models`,
+        title: 'Pre-print: Longitudinal Field Observations and Predictive Models',
         authors: 'MIT Academic Consortium',
         year: 2024,
         journal: 'MIT Research Archive',
@@ -264,9 +408,9 @@ Synthesis.EvaluateConfidenceScore(iterations: 1000)`
         doi: '10.48550/arXiv.2403.0112',
         url: 'https://arxiv.org/abs/2403.0112',
         tags: ['Pre-print', 'Institution Data'],
-        abstract: 'Exploratory data analysis establishing new scaling paradigms for multi-factor synthesis.'
-      }
-    ]
+        abstract: 'Exploratory data analysis establishing new scaling paradigms for multi-factor synthesis.',
+      },
+    ],
   };
 }
 

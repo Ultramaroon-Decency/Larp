@@ -21,7 +21,7 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
     : sources;
 
   return (
-    <aside className="w-[320px] h-full bg-[#F2F4F6] border-l border-[#C6C6CD] flex flex-col shrink-0 hidden lg:flex">
+    <aside className="w-[300px] h-full bg-[#F2F4F6] border-l border-[#C6C6CD] flex flex-col shrink-0 hidden md:flex">
       {/* Panel Header */}
       <div className="p-4 border-b border-[#C6C6CD] flex items-center justify-between bg-[#F7F9FB]">
         <div className="flex items-center gap-2">
@@ -41,6 +41,25 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
 
       {/* Sources Scroll Area */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+        {filteredSources.length === 0 && (
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-[#76777D]">
+            <span className="material-symbols-outlined text-[36px] mb-2">auto_stories</span>
+            <p className="text-[13px] font-medium">
+              {sources.length === 0
+                ? 'Sources will appear here after synthesis completes.'
+                : 'No sources match the selected tag.'}
+            </p>
+            {filterTag && (
+              <button
+                onClick={() => setFilterTag(null)}
+                className="mt-2 text-[12px] text-[#2563EB] hover:underline"
+              >
+                Clear filter
+              </button>
+            )}
+          </div>
+        )}
+
         {filteredSources.map((source) => {
           const isHighlighted = highlightedSourceIndex === source.index;
 
@@ -78,7 +97,7 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
               {/* Abstract Preview if available */}
               {source.abstract && (
                 <p className="text-[12px] text-[#76777D] line-clamp-2 italic">
-                  "{source.abstract}"
+                  &ldquo;{source.abstract}&rdquo;
                 </p>
               )}
 
@@ -91,7 +110,7 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
                       e.stopPropagation();
                       setFilterTag(filterTag === tag ? null : tag);
                     }}
-                    className={`border border-[#C6C6CD] rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#45464D] transition-colors ${
+                    className={`border border-[#C6C6CD] rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#45464D] transition-colors cursor-pointer ${
                       filterTag === tag ? 'bg-[#0F172A] text-white' : 'hover:bg-[#E0E3E5]'
                     }`}
                   >
@@ -106,7 +125,7 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
                     onClick={(e) => e.stopPropagation()}
                     className="ml-auto text-[#2563EB] hover:underline text-[11px] font-medium flex items-center gap-0.5"
                   >
-                    DOI
+                    View
                     <span className="material-symbols-outlined text-[12px]">open_in_new</span>
                   </a>
                 )}

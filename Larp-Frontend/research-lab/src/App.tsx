@@ -4,7 +4,9 @@ import {
   ResearchProject,
   ResearchMode,
   AttachedFile,
-  Source
+  Source,
+  PipelineStep,
+  PaymentReceipt,
 } from './types';
 import { INITIAL_PROJECTS, INITIAL_COLLECTIONS } from './data/mockData';
 import { Sidebar } from './components/Sidebar';
@@ -28,6 +30,9 @@ export default function App() {
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
   const [defaultMode, setDefaultMode] = useState<ResearchMode>('quick');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  // Live pipeline state — updated via SSE as steps run
+  const [livePipelineSteps, setLivePipelineSteps] = useState<PipelineStep[]>([]);
+  const [livePayments, setLivePayments] = useState<PaymentReceipt[]>([]);
 
   const activeProject = projects.find((p) => p.id === activeProjectId) || projects[0] || null;
 
@@ -67,6 +72,9 @@ export default function App() {
     mode: ResearchMode,
     attachedFiles: AttachedFile[]
   ) => {
+    // Generate a unique session ID for SSE correlation
+    const sessionId = crypto.randomUUID();
+
     const newId = `project-${Date.now()}`;
     const newProject: ResearchProject = {
       id: newId,
@@ -97,12 +105,47 @@ export default function App() {
     setActiveProjectId(newId);
     setActiveTab('chat');
     setIsSynthesizing(true);
+    setLivePipelineSteps([]);
+    setLivePayments([]);
+
+    // Open SSE connection BEFORE posting to capture all events
+    const eventSource = new EventSource(`/api/research/stream/${sessionId}`);
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        if (data.type === 'step_start' || data.type === 'step_done' || data.type === 'step_error') {
+          setLivePipelineSteps((prev) => {
+            const existing = prev.find((s) => s.id === data.step.id);
+            if (existing) {
+              return prev.map((s) => (s.id === data.step.id ? data.step : s));
+            }
+            return [...prev, data.step];
+          });
+        }
+
+        if (data.type === 'payment' && data.payment) {
+          setLivePayments((prev) => [...prev, data.payment]);
+        }
+
+        if (data.type === 'complete' || data.type === 'pipeline_error') {
+          eventSource.close();
+        }
+      } catch {
+        // ignore parse errors for ping events
+      }
+    };
+
+    eventSource.onerror = () => {
+      eventSource.close();
+    };
 
     try {
       const res = await fetch('/api/research/synthesize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, mode, attachedFiles })
+        body: JSON.stringify({ query, mode, attachedFiles, sessionId })
       });
 
       if (!res.ok) throw new Error('Failed to reach synthesis API');
@@ -117,6 +160,9 @@ export default function App() {
             ...p,
             title: data.title || p.title,
             status: 'completed',
+            pipelineSteps: data.pipelineSteps ?? [],
+            payments: data.payments ?? [],
+            totalCost: data.totalCost ?? '0.0000',
             messages: [
               ...p.messages,
               {
@@ -138,7 +184,8 @@ export default function App() {
       );
     } catch (err) {
       console.error('Synthesis error:', err);
-      showToast('Completed using offline academic synthesis model.');
+      showToast('Synthesis failed. Check your API key and try again.');
+      eventSource.close();
     } finally {
       setIsSynthesizing(false);
     }
@@ -256,8 +303,8 @@ export default function App() {
     <div className="flex h-screen overflow-hidden bg-[#F7F9FB] text-[#191C1E] font-sans antialiased">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-4 right-4 z-50 bg-[#0F172A] text-white text-[13px] font-medium px-4 py-2.5 rounded-md shadow-xl border border-slate-700 flex items-center gap-2 animate-bounce">
-          <span className="material-symbols-outlined text-[18px]">check_circle</span>
+        <div className="fixed top-4 right-4 z-50 bg-[#0F172A] text-white text-[13px] font-medium px-4 py-2.5 rounded-md shadow-xl border border-slate-700 flex items-center gap-2 animate-fade-in-down">
+          <span className="material-symbols-outlined text-[18px] text-emerald-400">check_circle</span>
           {toastMessage}
         </div>
       )}
@@ -296,6 +343,8 @@ export default function App() {
             onRefineQuery={handleRefineQuery}
             onViewBibliographyClick={() => setActiveTab('bibliography')}
             isSynthesizing={isSynthesizing}
+            livePipelineSteps={livePipelineSteps}
+            livePayments={livePayments}
           />
         )}
 
@@ -331,6 +380,7 @@ export default function App() {
             defaultMode={defaultMode}
             setDefaultMode={setDefaultMode}
             onUpgradeClick={() => setIsUpgradeModalOpen(true)}
+            livePayments={livePayments}
           />
         )}
       </div>
