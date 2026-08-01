@@ -186,6 +186,9 @@ export default function App() {
       console.error('Synthesis error:', err);
       showToast('Synthesis failed. Check your API key and try again.');
       eventSource.close();
+      setProjects((prev) =>
+        prev.map((p) => (p.id === newId ? { ...p, status: 'failed' } : p))
+      );
     } finally {
       setIsSynthesizing(false);
     }

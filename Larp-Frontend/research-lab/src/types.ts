@@ -72,7 +72,7 @@ export interface ResearchProject {
   createdAt: string;
   updatedAt: string;
   dateLabel: string;
-  status: 'draft' | 'completed' | 'synthesizing';
+  status: 'draft' | 'completed' | 'synthesizing' | 'failed';
   category: string;
   isStarred: boolean;
   isShared: boolean;
