@@ -226,6 +226,8 @@ export default function App() {
         })
       });
 
+      if (!res.ok) throw new Error('Refinement request failed');
+
       const data = await res.json();
 
       const assistantMsg = {
@@ -257,6 +259,7 @@ export default function App() {
       );
     } catch (err) {
       console.error(err);
+      showToast('Refinement failed. Please try again.');
     } finally {
       setIsSynthesizing(false);
     }
