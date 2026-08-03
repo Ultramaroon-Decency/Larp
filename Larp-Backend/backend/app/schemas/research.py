@@ -59,8 +59,18 @@ class ResearchJobRead(BaseModel):
     execution_time_ms: Optional[int] = None
     config: Optional[Dict[str, Any]] = None
     error_message: Optional[str] = None
+    cancelled_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+
+
+class ResearchCancelResponse(BaseModel):
+    """Response payload for research job cancellation."""
+
+    success: bool = True
+    research_id: uuid.UUID
+    status: str = "cancelled"
+    message: str = "Research cancelled successfully."
 
 
 class ResearchJobStatusResponse(BaseModel):

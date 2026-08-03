@@ -3,7 +3,7 @@
 from typing import Sequence
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Path, Query, Response, status
 from fastapi.responses import HTMLResponse
 
 from app.dependencies import (
@@ -14,6 +14,7 @@ from app.dependencies import (
 )
 from app.schemas.common import PaginatedResponse, ResponseEnvelope
 from app.schemas.research import (
+    ResearchCancelResponse,
     ResearchJobCreate,
     ResearchJobDetailsRead,
     ResearchJobRead,
@@ -189,6 +190,43 @@ async def update_job_progress(
         message="Research job progress updated successfully",
         data=updated_status,
     )
+
+
+@router.post(
+    "/{job_id}/cancel",
+    summary="Cancel Research Job",
+    description="Cancel an active or queued research job owned by the authenticated user.",
+    response_model=ResearchCancelResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        200: {
+            "description": "Research job cancelled successfully.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "success": True,
+                        "research_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "status": "cancelled",
+                        "message": "Research cancelled successfully.",
+                    }
+                }
+            },
+        },
+        401: {"description": "Unauthorized access token."},
+        403: {"description": "Forbidden: User does not own this research job."},
+        404: {"description": "Research job not found."},
+        409: {"description": "Conflict: Invalid status transition (job is completed, failed, or already cancelled)."},
+        500: {"description": "Unexpected error."},
+    },
+)
+async def cancel_research_job(
+    job_id: UUID = Path(..., description="ID of the research job to cancel"),
+    current_user: dict = Depends(get_current_user),
+    research_service: ResearchService = Depends(get_research_service),
+) -> ResearchCancelResponse:
+    """Cancel a queued or running research job."""
+    user_id = UUID(current_user["id"])
+    return await research_service.cancel_research(job_id=job_id, user_id=user_id)
 
 
 @router.delete(
