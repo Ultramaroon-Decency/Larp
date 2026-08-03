@@ -1,9 +1,10 @@
 """ResearchJob database model with progress tracking and optimized indexes."""
 
 import uuid
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from sqlalchemy import Float, ForeignKey, Index, Integer, JSON, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -46,6 +47,7 @@ class ResearchJob(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     config: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cancelled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # ── Database Indexes & Optimizations ────────────────────────────────
     __table_args__ = (
