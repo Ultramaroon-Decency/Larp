@@ -193,7 +193,7 @@ async def update_job_progress(
 
 
 @router.post(
-    "/{research_id}/cancel",
+    "/{job_id}/cancel",
     summary="Cancel Research Job",
     description="Cancel an active or queued research job owned by the authenticated user.",
     response_model=ResearchCancelResponse,
@@ -212,20 +212,21 @@ async def update_job_progress(
                 }
             },
         },
-        401: {"description": "Unauthorized access token or user does not own this research job."},
+        401: {"description": "Unauthorized access token."},
+        403: {"description": "Forbidden: User does not own this research job."},
         404: {"description": "Research job not found."},
         409: {"description": "Conflict: Invalid status transition (job is completed, failed, or already cancelled)."},
         500: {"description": "Unexpected error."},
     },
 )
 async def cancel_research_job(
-    research_id: UUID = Path(..., description="ID of the research job to cancel"),
+    job_id: UUID = Path(..., description="ID of the research job to cancel"),
     current_user: dict = Depends(get_current_user),
     research_service: ResearchService = Depends(get_research_service),
 ) -> ResearchCancelResponse:
     """Cancel a queued or running research job."""
     user_id = UUID(current_user["id"])
-    return await research_service.cancel_research(job_id=research_id, user_id=user_id)
+    return await research_service.cancel_research(job_id=job_id, user_id=user_id)
 
 
 @router.delete(

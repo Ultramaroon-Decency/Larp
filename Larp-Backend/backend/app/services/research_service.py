@@ -8,7 +8,6 @@ from typing import Sequence
 from uuid import UUID
 
 from app.core.exceptions import (
-    AuthenticationError,
     AuthorizationError,
     ConflictError,
     NotFoundError,
@@ -420,7 +419,7 @@ class ResearchService:
 
             # Validate ownership
             if job.user_id != user_id:
-                raise AuthenticationError("User is not authorized to cancel this research job")
+                raise AuthorizationError("User is not authorized to cancel this research job")
 
             # Validate current status
             if job.status not in allowed_cancellation_statuses:
@@ -492,7 +491,7 @@ class ResearchService:
                 message="Research cancelled successfully.",
             )
 
-        except (AuthenticationError, ConflictError, NotFoundError):
+        except (AuthorizationError, ConflictError, NotFoundError):
             raise
         except Exception:
             # Fallback for mock/uninitialized DB scenarios

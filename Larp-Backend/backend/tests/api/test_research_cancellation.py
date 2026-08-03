@@ -1,4 +1,4 @@
-"""Unit tests for Research Cancellation API endpoint POST /api/v1/research/{research_id}/cancel."""
+"""Unit tests for Research Cancellation API endpoint POST /api/v1/research/{job_id}/cancel."""
 
 import uuid
 import pytest
@@ -164,7 +164,7 @@ async def test_cancel_already_cancelled_research(client: AsyncClient, db_session
 
 @pytest.mark.asyncio
 async def test_unauthorized_cancellation(client: AsyncClient, db_session: AsyncSession, auth_headers: dict):
-    """✓ Test unauthorized cancellation (non-owner or missing token) returns 401 Unauthorized."""
+    """✓ Test unauthorized cancellation (non-owner returns 403 Forbidden, missing token returns 401 Unauthorized)."""
     # Create job owned by owner_uuid
     owner_uuid = uuid.uuid4()
     job = ResearchJob(
@@ -178,14 +178,14 @@ async def test_unauthorized_cancellation(client: AsyncClient, db_session: AsyncS
     db_session.add(job)
     await db_session.commit()
 
-    # User B (auth_headers) attempts to cancel owner_uuid's job -> 401
+    # User B (auth_headers) attempts to cancel owner_uuid's job -> 403 Forbidden
     response = await client.post(
         f"/api/v1/research/{job.id}/cancel",
         headers=auth_headers,
     )
-    assert response.status_code == 401
+    assert response.status_code == 403
 
-    # Unauthenticated request (no headers) -> 401
+    # Unauthenticated request (no headers) -> 401 Unauthorized
     unauth_response = await client.post(f"/api/v1/research/{job.id}/cancel")
     assert unauth_response.status_code == 401
 
