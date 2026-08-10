@@ -245,3 +245,106 @@ async def test_api_logout_endpoint_uses_auth_service(client: AsyncClient):
         headers={"Authorization": f"Bearer {access_token}"},
     )
     assert ref_resp.status_code == 401
+
+
+# Middleware Database Verification Tests
+
+
+@pytest.mark.asyncio
+async def test_middleware_valid_jwt_nonexistent_user(client: AsyncClient):
+    """Test valid JWT for deleted/nonexistent user is rejected with 401."""
+    import uuid
+    fake_user_id = str(uuid.uuid4())
+    token = create_access_token(subject=fake_user_id)
+
+    response = await client.get(
+        "/api/v1/users/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 401
+    assert response.json()["message"] == "User no longer exists"
+
+
+@pytest.mark.asyncio
+async def test_middleware_valid_jwt_deactivated_user(client: AsyncClient, db_session):
+    """Test valid JWT for deactivated user is rejected with 403."""
+    user_repo = UserRepository(db_session)
+    user = await user_repo.create({
+        "email": "middleware_deactive@example.com",
+        "hashed_password": hash_password("password123"),
+        "is_active": False,
+    })
+    await db_session.commit()
+
+    token = create_access_token(subject=str(user.id))
+
+    response = await client.get(
+        "/api/v1/users/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 403
+    assert response.json()["message"] == "User account is deactivated"
+
+
+@pytest.mark.asyncio
+async def test_middleware_user_deactivation_regression(client: AsyncClient, db_session):
+    """Regression test: User gets JWT -> user is deactivated -> JWT is rejected on protected route."""
+    # 1. Register and login to get JWT
+    await client.post(
+        "/api/v1/auth/register",
+        json={"email": "deact_regression@example.com", "password": "password123"},
+    )
+    login_resp = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "deact_regression@example.com", "password": "password123"},
+    )
+    access_token = login_resp.json()["data"]["access_token"]
+
+    # 2. Access protected endpoint -> succeeds
+    me_resp1 = await client.get(
+        "/api/v1/users/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert me_resp1.status_code == 200
+
+    # 3. Deactivate user in database
+    user_repo = UserRepository(db_session)
+    user = await user_repo.get_by_email("deact_regression@example.com")
+    await user_repo.update(user.id, {"is_active": False})
+    await db_session.commit()
+
+    # 4. Access protected endpoint with SAME JWT -> now rejected with 403
+    me_resp2 = await client.get(
+        "/api/v1/users/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert me_resp2.status_code == 403
+    assert me_resp2.json()["message"] == "User account is deactivated"
+
+
+@pytest.mark.asyncio
+async def test_middleware_user_deletion_regression(client: AsyncClient, db_session):
+    """Regression test: User gets JWT -> user is deleted -> JWT is rejected on protected route."""
+    await client.post(
+        "/api/v1/auth/register",
+        json={"email": "del_regression@example.com", "password": "password123"},
+    )
+    login_resp = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "del_regression@example.com", "password": "password123"},
+    )
+    access_token = login_resp.json()["data"]["access_token"]
+
+    # Delete user from DB
+    user_repo = UserRepository(db_session)
+    user = await user_repo.get_by_email("del_regression@example.com")
+    await user_repo.delete(user.id)
+    await db_session.commit()
+
+    # Protected endpoint call with old JWT -> rejected with 401
+    me_resp = await client.get(
+        "/api/v1/users/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert me_resp.status_code == 401
+    assert me_resp.json()["message"] == "User no longer exists"

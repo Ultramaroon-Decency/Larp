@@ -26,9 +26,13 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from uuid import UUID
+
+import app.database
 from app.core.logging import get_logger
 from app.core.security import decode_access_token
 from app.middleware.correlation_id import get_correlation_id
+from app.repositories.user_repository import UserRepository
 
 logger = get_logger("auth")
 
@@ -155,13 +159,58 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             )
             return _auth_error(401, "Invalid or expired token", correlation_id)
 
-        # ── Build user context ─────────────────────────────────────────
-        # The payload.sub contains the user ID from the JWT.
-        # In a full implementation, query the DB here to verify the
-        # user still exists and is active.  For now we build a minimal
-        # user dict from the token claims.
+        # ── Parse UUID subject ─────────────────────────────────────────
+        try:
+            user_id = UUID(payload.sub)
+        except (ValueError, TypeError):
+            logger.warning(
+                "Invalid user ID in JWT subject claim",
+                http_path=request.url.path,
+                correlation_id=correlation_id,
+            )
+            return _auth_error(401, "Invalid token subject", correlation_id)
+
+        # ── Query user from database & verify account status ────────────
+        try:
+            async with app.database.async_session_maker() as session:
+                user_repo = UserRepository(session)
+                db_user = await user_repo.get_by_id(user_id)
+        except Exception as exc:
+            logger.error(
+                "Database error during user authentication lookup",
+                error=str(exc),
+                http_path=request.url.path,
+                correlation_id=correlation_id,
+            )
+            return _auth_error(500, "Internal server error", correlation_id)
+
+        if db_user is None:
+            logger.warning(
+                "User from JWT subject claim no longer exists",
+                user_id=payload.sub,
+                http_path=request.url.path,
+                correlation_id=correlation_id,
+            )
+            return _auth_error(401, "User no longer exists", correlation_id)
+
+        if not db_user.is_active:
+            logger.warning(
+                "Deactivated user attempted request",
+                user_id=payload.sub,
+                http_path=request.url.path,
+                correlation_id=correlation_id,
+            )
+            return _auth_error(403, "User account is deactivated", correlation_id)
+
+        # ── Build user context from database record ────────────────────
         user: dict[str, Any] = {
-            "id": payload.sub,
+            "id": str(db_user.id),
+            "email": db_user.email,
+            "full_name": db_user.full_name,
+            "role": db_user.role,
+            "is_active": db_user.is_active,
+            "is_superuser": db_user.is_superuser,
+            "is_admin": db_user.is_admin,
             "token_iat": payload.iat,
             "token_exp": payload.exp,
         }

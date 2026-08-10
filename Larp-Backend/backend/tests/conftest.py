@@ -4,15 +4,27 @@ import asyncio
 import uuid
 import pytest
 from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from app.core.security import create_access_token
 from app.database import get_async_session
 from app.main import create_app
 from app.models.base import Base
 
+import app.database as app_db
+
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+
+test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+
+app_db.engine = test_engine
+app_db.async_session_maker = async_sessionmaker(
+    bind=test_engine, class_=AsyncSession, expire_on_commit=False, autoflush=False
+)
 
 app = create_app()
 
@@ -28,7 +40,6 @@ def event_loop():
 @pytest.fixture(scope="session")
 async def engine():
     """Create async SQLite engine and initialize tables."""
-    test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield test_engine
@@ -40,10 +51,7 @@ async def engine():
 @pytest.fixture
 async def db_session(engine):
     """Yield an AsyncSession for each test."""
-    async_session = sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
-    async with async_session() as session:
+    async with app_db.async_session_maker() as session:
         yield session
 
 
@@ -79,6 +87,7 @@ async def client(db_session, mock_redis):
     """Yield httpx AsyncClient with FastAPI test app."""
     async def override_get_db():
         yield db_session
+        await db_session.commit()
 
     async def override_get_redis():
         return mock_redis
@@ -97,8 +106,22 @@ async def client(db_session, mock_redis):
 
 
 @pytest.fixture
-def auth_headers():
-    """Return dictionary with Authorization bearer token for a test user."""
-    test_user_id = str(uuid.uuid4())
-    token = create_access_token(subject=test_user_id)
+async def auth_user(db_session):
+    """Create and commit an active test user entity in the database."""
+    from app.repositories.user_repository import UserRepository
+    from app.core.security import hash_password
+    user_repo = UserRepository(db_session)
+    user = await user_repo.create({
+        "email": f"auth_user_{uuid.uuid4()}@example.com",
+        "hashed_password": hash_password("password123"),
+        "is_active": True,
+    })
+    await db_session.commit()
+    return user
+
+
+@pytest.fixture
+async def auth_headers(auth_user):
+    """Return dictionary with Authorization bearer token for an active test user in DB."""
+    token = create_access_token(subject=str(auth_user.id))
     return {"Authorization": f"Bearer {token}"}
