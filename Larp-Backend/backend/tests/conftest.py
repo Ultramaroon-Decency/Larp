@@ -47,15 +47,46 @@ async def db_session(engine):
         yield session
 
 
+class FakeRedis:
+    """In-memory Redis fake for testing."""
+
+    def __init__(self):
+        self.store = {}
+
+    async def setex(self, name: str, time: int, value: str):
+        self.store[name] = value
+
+    async def get(self, name: str):
+        return self.store.get(name)
+
+    async def delete(self, *names: str):
+        count = 0
+        for name in names:
+            if name in self.store:
+                del self.store[name]
+                count += 1
+        return count
+
+
 @pytest.fixture
-async def client(db_session):
+def mock_redis():
+    """Yield a fresh FakeRedis instance."""
+    return FakeRedis()
+
+
+@pytest.fixture
+async def client(db_session, mock_redis):
     """Yield httpx AsyncClient with FastAPI test app."""
     async def override_get_db():
         yield db_session
 
-    from app.dependencies import get_db
+    async def override_get_redis():
+        return mock_redis
+
+    from app.dependencies import get_db, get_redis_client
     app.dependency_overrides[get_async_session] = override_get_db
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_redis_client] = override_get_redis
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"

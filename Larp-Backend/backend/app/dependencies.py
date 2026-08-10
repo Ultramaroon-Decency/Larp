@@ -42,6 +42,7 @@ from app.repositories.research_history_repository import ResearchHistoryReposito
 from app.repositories.payment_repository import PaymentRepository
 from app.repositories.agent_execution_log_repository import AgentExecutionLogRepository
 from app.services.user_service import UserService
+from app.services.auth_service import AuthService
 from app.services.research_service import ResearchService
 from app.services.agent_service import AgentService
 from app.services.agent_manager import AgentManager
@@ -180,6 +181,15 @@ async def get_payment_service(
 ) -> PaymentService:
     """Inject a ``PaymentService`` instance."""
     return PaymentService(payment_repo)
+
+
+async def get_auth_service(
+    user_repo: UserRepository = Depends(get_user_repository),
+    settings: Settings = Depends(get_settings_dependency),
+    redis: Redis = Depends(get_redis_client),
+) -> AuthService:
+    """Inject an ``AuthService`` instance."""
+    return AuthService(user_repo=user_repo, settings=settings, redis=redis)
 
 
 # ---------------------------------------------------------------------------
