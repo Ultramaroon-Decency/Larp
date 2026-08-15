@@ -41,6 +41,7 @@ from app.repositories.research_source_repository import ResearchSourceRepository
 from app.repositories.research_history_repository import ResearchHistoryRepository
 from app.repositories.payment_repository import PaymentRepository
 from app.repositories.agent_execution_log_repository import AgentExecutionLogRepository
+from app.services.auth_service import AuthService
 from app.services.user_service import UserService
 from app.services.research_service import ResearchService
 from app.services.agent_service import AgentService
@@ -132,6 +133,15 @@ get_agent_repository = get_agent_execution_log_repository
 # ---------------------------------------------------------------------------
 # Service Dependencies
 # ---------------------------------------------------------------------------
+
+async def get_auth_service(
+    user_repo: UserRepository = Depends(get_user_repository),
+    redis: Redis = Depends(get_redis_client),
+    settings: Settings = Depends(get_settings_dependency),
+) -> AuthService:
+    """Inject an ``AuthService`` instance."""
+    return AuthService(user_repo=user_repo, redis=redis, settings=settings)
+
 
 async def get_user_service(
     user_repo: UserRepository = Depends(get_user_repository),
