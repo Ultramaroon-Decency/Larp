@@ -22,6 +22,7 @@ export const ChatResearchView: React.FC<ChatResearchViewProps> = ({
   const [refineText, setRefineText] = useState('');
   const [highlightedSourceIndex, setHighlightedSourceIndex] = useState<number | null>(null);
   const [isPipelinePanelOpen, setIsPipelinePanelOpen] = useState(true);
+  const [isSourcesMobileOpen, setIsSourcesMobileOpen] = useState(false);
 
   // Use live steps during synthesis, fall back to project's stored steps after
   const displaySteps: PipelineStep[] =
@@ -47,6 +48,11 @@ export const ChatResearchView: React.FC<ChatResearchViewProps> = ({
     setRefineText('');
   };
 
+  const handleCitationClick = (citeIndex: number) => {
+    setHighlightedSourceIndex(citeIndex);
+    setIsSourcesMobileOpen(true);
+  };
+
   // Helper to render text with interactive citation badges [1], [2], [3]
   const renderTextWithCitations = (text: string) => {
     const parts = text.split(/(\[\d+\])/g);
@@ -59,6 +65,7 @@ export const ChatResearchView: React.FC<ChatResearchViewProps> = ({
         return (
           <span
             key={i}
+            onClick={() => handleCitationClick(citeIndex)}
             onMouseEnter={() => setHighlightedSourceIndex(citeIndex)}
             onMouseLeave={() => setHighlightedSourceIndex(null)}
             className={`inline-flex items-center justify-center rounded px-1.5 py-0.5 mx-1 font-mono text-[12px] font-bold border transition-colors cursor-pointer ${
@@ -66,7 +73,7 @@ export const ChatResearchView: React.FC<ChatResearchViewProps> = ({
                 ? 'bg-[#0F172A] text-white border-[#0F172A]'
                 : 'bg-[#EFF6FF] text-[#0F172A] border-[#C6C6CD] hover:bg-[#D5E3FD]'
             }`}
-            title={`Citation [${citeIndex}] - Hover to highlight source card`}
+            title={`Citation [${citeIndex}] - Click to view source card`}
           >
             [{citeIndex}]
           </span>
@@ -331,6 +338,22 @@ export const ChatResearchView: React.FC<ChatResearchViewProps> = ({
             </button>
           </form>
         </div>
+
+        {/* Mobile Floating Action Button for Sources Panel */}
+        <button
+          type="button"
+          onClick={() => setIsSourcesMobileOpen(true)}
+          className="md:hidden fixed bottom-20 right-4 z-30 bg-[#0F172A] text-white px-4 py-2.5 rounded-full shadow-lg border border-slate-700 font-bold text-[13px] flex items-center gap-2 hover:bg-slate-800 transition-transform active:scale-95 cursor-pointer"
+          title="View Sources & Citations"
+        >
+          <span className="material-symbols-outlined text-[18px]">auto_stories</span>
+          <span>Sources</span>
+          {project.sources.length > 0 && (
+            <span className="bg-white/20 px-2 py-0.5 rounded-full text-[11px] font-mono">
+              {project.sources.length}
+            </span>
+          )}
+        </button>
       </main>
 
       {/* Right Sidebar (Sources Panel) */}
@@ -339,6 +362,8 @@ export const ChatResearchView: React.FC<ChatResearchViewProps> = ({
         highlightedSourceIndex={highlightedSourceIndex}
         onSourceHover={(idx) => setHighlightedSourceIndex(idx)}
         onViewBibliographyClick={onViewBibliographyClick}
+        isOpenMobile={isSourcesMobileOpen}
+        onCloseMobile={() => setIsSourcesMobileOpen(false)}
       />
     </div>
   );
