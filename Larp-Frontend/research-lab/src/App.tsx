@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   ActiveTab,
   ResearchProject,
@@ -33,8 +33,18 @@ export default function App() {
   // Live pipeline state — updated via SSE as steps run
   const [livePipelineSteps, setLivePipelineSteps] = useState<PipelineStep[]>([]);
   const [livePayments, setLivePayments] = useState<PaymentReceipt[]>([]);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   const activeProject = projects.find((p) => p.id === activeProjectId) || projects[0] || null;
+
+  useEffect(() => {
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+    };
+  }, []);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -108,8 +118,15 @@ export default function App() {
     setLivePipelineSteps([]);
     setLivePayments([]);
 
+    // Close any previous SSE connection if one exists
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+
     // Open SSE connection BEFORE posting to capture all events
     const eventSource = new EventSource(`/api/research/stream/${sessionId}`);
+    eventSourceRef.current = eventSource;
 
     eventSource.onmessage = (event) => {
       try {
@@ -131,6 +148,9 @@ export default function App() {
 
         if (data.type === 'complete' || data.type === 'pipeline_error') {
           eventSource.close();
+          if (eventSourceRef.current === eventSource) {
+            eventSourceRef.current = null;
+          }
         }
       } catch {
         // ignore parse errors for ping events
@@ -139,6 +159,9 @@ export default function App() {
 
     eventSource.onerror = () => {
       eventSource.close();
+      if (eventSourceRef.current === eventSource) {
+        eventSourceRef.current = null;
+      }
     };
 
     try {
@@ -186,6 +209,9 @@ export default function App() {
       console.error('Synthesis error:', err);
       showToast('Synthesis failed. Check your API key and try again.');
       eventSource.close();
+      if (eventSourceRef.current === eventSource) {
+        eventSourceRef.current = null;
+      }
       setProjects((prev) =>
         prev.map((p) => (p.id === newId ? { ...p, status: 'failed' } : p))
       );
