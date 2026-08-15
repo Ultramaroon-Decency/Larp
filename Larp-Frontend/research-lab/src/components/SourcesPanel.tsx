@@ -6,13 +6,17 @@ interface SourcesPanelProps {
   highlightedSourceIndex: number | null;
   onSourceHover: (index: number | null) => void;
   onViewBibliographyClick: () => void;
+  isOpenMobile?: boolean;
+  onCloseMobile?: () => void;
 }
 
 export const SourcesPanel: React.FC<SourcesPanelProps> = ({
   sources,
   highlightedSourceIndex,
   onSourceHover,
-  onViewBibliographyClick
+  onViewBibliographyClick,
+  isOpenMobile = false,
+  onCloseMobile
 }) => {
   const [filterTag, setFilterTag] = useState<string | null>(null);
 
@@ -20,23 +24,41 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
     ? sources.filter((s) => s.tags.includes(filterTag))
     : sources;
 
-  return (
-    <aside className="w-[300px] h-full bg-[#F2F4F6] border-l border-[#C6C6CD] flex flex-col shrink-0 hidden md:flex">
+  const handleBibliographyClick = () => {
+    onViewBibliographyClick();
+    if (onCloseMobile) {
+      onCloseMobile();
+    }
+  };
+
+  const panelBody = (
+    <>
       {/* Panel Header */}
-      <div className="p-4 border-b border-[#C6C6CD] flex items-center justify-between bg-[#F7F9FB]">
+      <div className="p-4 border-b border-[#C6C6CD] flex items-center justify-between bg-[#F7F9FB] shrink-0">
         <div className="flex items-center gap-2">
           <h3 className="font-bold text-[18px] text-[#0F172A]">Sources & Citations</h3>
           <span className="text-[11px] font-bold bg-[#E0E3E5] px-2 py-0.5 rounded-full text-[#45464D]">
             {sources.length}
           </span>
         </div>
-        <button
-          onClick={onViewBibliographyClick}
-          className="text-[#45464D] hover:text-[#0F172A] text-[12px] font-bold uppercase tracking-wider transition-colors flex items-center gap-1 cursor-pointer"
-          title="Full Bibliography View"
-        >
-          <span className="material-symbols-outlined text-[18px]">filter_list</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleBibliographyClick}
+            className="text-[#45464D] hover:text-[#0F172A] text-[12px] font-bold uppercase tracking-wider transition-colors flex items-center gap-1 cursor-pointer"
+            title="Full Bibliography View"
+          >
+            <span className="material-symbols-outlined text-[18px]">filter_list</span>
+          </button>
+          {onCloseMobile && (
+            <button
+              onClick={onCloseMobile}
+              className="md:hidden text-[#45464D] hover:text-[#0F172A] p-1 rounded-md hover:bg-[#E0E3E5] transition-colors cursor-pointer"
+              title="Close Sources"
+            >
+              <span className="material-symbols-outlined text-[20px]">close</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Sources Scroll Area */}
@@ -136,13 +158,35 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
 
         {/* View Full Bibliography CTA */}
         <button
-          onClick={onViewBibliographyClick}
+          onClick={handleBibliographyClick}
           className="w-full py-2.5 border border-[#C6C6CD] rounded-md text-[12px] font-bold uppercase tracking-wider text-[#0F172A] hover:bg-[#E0E3E5] transition-colors flex items-center justify-center gap-2 mt-2 cursor-pointer"
         >
           <span className="material-symbols-outlined text-[16px]">book</span>
           Open Bibliography Page
         </button>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Desktop Rail */}
+      <aside className="w-[300px] h-full bg-[#F2F4F6] border-l border-[#C6C6CD] flex flex-col shrink-0 hidden md:flex">
+        {panelBody}
+      </aside>
+
+      {/* Mobile Overlay & Drawer */}
+      {isOpenMobile && (
+        <div className="fixed inset-0 z-50 md:hidden flex justify-end">
+          <div
+            className="fixed inset-0 bg-black/40 backdrop-blur-xs"
+            onClick={onCloseMobile}
+          />
+          <aside className="relative w-[320px] max-w-[85vw] h-full bg-[#F2F4F6] border-l border-[#C6C6CD] flex flex-col z-10 shadow-2xl">
+            {panelBody}
+          </aside>
+        </div>
+      )}
+    </>
   );
 };
