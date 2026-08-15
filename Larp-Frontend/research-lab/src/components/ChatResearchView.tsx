@@ -36,7 +36,7 @@ export const ChatResearchView: React.FC<ChatResearchViewProps> = ({
       : (project.payments ?? []);
 
   const totalCost = displayPayments
-    .reduce((sum, p) => sum + parseFloat(p.amount), 0)
+    .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
     .toFixed(4);
 
   const showPipelinePanel = displaySteps.length > 0;

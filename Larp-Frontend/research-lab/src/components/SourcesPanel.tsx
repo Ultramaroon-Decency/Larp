@@ -102,7 +102,7 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
                   [{source.index}]
                 </span>
                 <span className="font-mono text-[11px] font-bold text-[#45464D] group-hover:text-[#0F172A] transition-colors">
-                  Relevance: {source.relevance.toFixed(2)}
+                  Relevance: {(typeof source.relevance === 'number' && !isNaN(source.relevance) ? source.relevance : 0).toFixed(2)}
                 </span>
               </div>
 
