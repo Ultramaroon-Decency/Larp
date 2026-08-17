@@ -265,3 +265,40 @@ def require_roles(*allowed_roles: str):
         return user
 
     return role_checker
+
+
+# ---------------------------------------------------------------------------
+# Autonomous Wallet & Payment Manager Dependencies
+# ---------------------------------------------------------------------------
+
+_simulation_wallet_instance = None
+_payment_manager_instance = None
+
+
+def get_simulation_wallet():
+    """Dependency to get global SimulationWallet instance."""
+    global _simulation_wallet_instance
+    from app.services.wallet import SimulationWallet
+    if _simulation_wallet_instance is None:
+        settings = get_settings()
+        _simulation_wallet_instance = SimulationWallet(
+            initial_balance=settings.simulation_wallet_balance
+        )
+    return _simulation_wallet_instance
+
+
+def get_payment_manager():
+    """Dependency to get global PaymentManager decision engine instance."""
+    global _payment_manager_instance
+    from app.services.payment_manager import PaymentManager
+    if _payment_manager_instance is None:
+        settings = get_settings()
+        wallet = get_simulation_wallet()
+        _payment_manager_instance = PaymentManager(
+            wallet=wallet,
+            default_job_budget=settings.research_budget,
+            max_transaction_amount=settings.max_transaction_amount,
+            daily_spending_limit=settings.daily_spending_limit,
+            wallet_mode=settings.wallet_mode,
+        )
+    return _payment_manager_instance

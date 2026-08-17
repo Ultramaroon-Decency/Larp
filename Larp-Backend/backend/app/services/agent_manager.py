@@ -2,7 +2,7 @@
 
 import time
 import traceback
-from typing import List, Optional
+from typing import Any, List, Optional
 from uuid import UUID
 
 from app.agents.citation import CitationAgentInterface, CitationItem
@@ -50,6 +50,7 @@ class AgentManager:
         fact_checker_agent: Optional[FactCheckerAgentInterface] = None,
         citation_agent: Optional[CitationAgentInterface] = None,
         report_agent: Optional[ReportAgentInterface] = None,
+        payment_manager: Optional[Any] = None,
         max_retries: int = 3,
         timeout_seconds: float = 30.0,
     ) -> None:
@@ -66,6 +67,12 @@ class AgentManager:
         self.fact_checker_agent = fact_checker_agent or MockFactCheckerAgent()
         self.citation_agent = citation_agent or MockCitationAgent()
         self.report_agent = report_agent or MockReportAgent()
+
+        if payment_manager:
+            self.payment_manager = payment_manager
+        else:
+            from app.services.payment_manager import PaymentManager
+            self.payment_manager = PaymentManager()
 
     # ── Step 1: Call Planner ───────────────────────────────────────────
     async def call_planner(self, query: str, depth: str) -> PlanOutput:
