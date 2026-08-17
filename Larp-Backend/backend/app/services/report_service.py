@@ -117,11 +117,38 @@ class ReportService:
         sections: Optional[List[Dict[str, str]]] = None,
         citations: Optional[List[Dict[str, Any]]] = None,
         conflicts: Optional[List[Dict[str, Any]]] = None,
+        confidence: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Generate a clean, structured Markdown research report."""
         md = f"# {title}\n\n"
         md += "## Executive Summary\n"
         md += f"{summary}\n\n"
+
+        if confidence:
+            overall = confidence.get("overall_score", 85.0)
+            level = confidence.get("confidence_level", "HIGH")
+            if hasattr(level, "value"):
+                level = level.value
+            sq = confidence.get("source_quality_score", 85.0)
+            ec = confidence.get("evidence_coverage_score", 85.0)
+            sa = confidence.get("source_agreement_score", 85.0)
+            cc = confidence.get("citation_coverage_score", 85.0)
+            cp = confidence.get("conflict_penalty", 0.0)
+            expl = confidence.get("explanation", "High confidence report.")
+
+            md += (
+                f"## Confidence\n\n"
+                f"**Overall Confidence**: {overall:.0f}%\n"
+                f"**Level**: {level}\n\n"
+                f"### Confidence Breakdown\n\n"
+                f"- **Source Quality**: {sq:.0f}%\n"
+                f"- **Evidence Coverage**: {ec:.0f}%\n"
+                f"- **Source Agreement**: {sa:.0f}%\n"
+                f"- **Citation Coverage**: {cc:.0f}%\n"
+                f"- **Conflict Penalty**: -{cp:.0f}\n\n"
+                f"### Explanation\n\n"
+                f"{expl}\n\n"
+            )
 
         if key_findings:
             md += "## Key Findings\n"

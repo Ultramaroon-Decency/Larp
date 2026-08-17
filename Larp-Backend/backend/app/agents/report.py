@@ -8,6 +8,7 @@ from app.agents.base import BaseAgentInterface, BaseAgentState
 from app.agents.citation import CitationItem
 from app.agents.fact_checker import VerifiedFact
 from app.agents.planner import PlanOutput
+from app.schemas.confidence import ConfidenceScore
 from app.schemas.conflict import SourceConflict
 
 
@@ -20,6 +21,7 @@ class FinalReportOutput(BaseModel):
     key_findings: List[Dict[str, Any]] = Field(description="Structured key findings list")
     word_count: int = Field(ge=0, description="Total report word count")
     conflicts: List[SourceConflict] = Field(default_factory=list, description="Source conflicts identified")
+    confidence: Optional[ConfidenceScore] = Field(default=None, description="Confidence score evaluation")
 
 
 class ReportAgentInterface(BaseAgentInterface):
@@ -37,8 +39,9 @@ class ReportAgentInterface(BaseAgentInterface):
         facts: List[VerifiedFact],
         citations: List[CitationItem],
         conflicts: Optional[List[SourceConflict]] = None,
+        confidence: Optional[ConfidenceScore] = None,
     ) -> FinalReportOutput:
-        """Synthesize verified facts, citations, and conflicts into a comprehensive Markdown report."""
+        """Synthesize verified facts, citations, conflicts, and confidence into a Markdown report."""
         pass
 
     @abstractmethod

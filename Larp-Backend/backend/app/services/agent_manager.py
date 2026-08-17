@@ -23,6 +23,7 @@ from app.repositories.agent_execution_log_repository import AgentExecutionLogRep
 from app.repositories.research_job_repository import ResearchJobRepository
 from app.repositories.research_report_repository import ResearchReportRepository
 from app.repositories.research_source_repository import ResearchSourceRepository
+from app.schemas.confidence import ConfidenceScore
 from app.schemas.conflict import SourceConflict
 from app.utils.resilience import execute_with_resilience
 
@@ -198,6 +199,25 @@ class AgentManager:
             fallback_factory=fallback_citations,
         )
 
+    # ── Step 3c: Call Confidence Scorer ──────────────────────────────
+    async def call_confidence_scorer(
+        self,
+        raw_sources: List[SearchResultItem],
+        verified_facts: List[VerifiedFact],
+        conflicts: List[SourceConflict],
+        citations: List[CitationItem],
+        job_id: Optional[UUID] = None,
+    ) -> ConfidenceScore:
+        """Call ConfidenceScorer to calculate evidence-backed confidence score."""
+        from app.services.confidence_scorer import ConfidenceScorer
+        return ConfidenceScorer.calculate_confidence(
+            raw_sources=[s.model_dump() for s in raw_sources],
+            verified_facts=[f.model_dump() for f in verified_facts],
+            source_conflicts=[c.model_dump() for c in conflicts],
+            citations=[c.model_dump() for c in citations],
+            job_id=str(job_id) if job_id else None,
+        )
+
     # ── Step 5: Call Report Generator ──────────────────────────────────
     async def call_report_generator(
         self,
@@ -206,6 +226,7 @@ class AgentManager:
         facts: List[VerifiedFact],
         citations: List[CitationItem],
         conflicts: Optional[List[SourceConflict]] = None,
+        confidence: Optional[ConfidenceScore] = None,
     ) -> FinalReportOutput:
         """Call Report Generator Agent with retry logic, 30s timeout, and fallback report."""
         def fallback_report() -> FinalReportOutput:
@@ -223,6 +244,7 @@ class AgentManager:
                 key_findings=[{"statement": f.fact_statement} for f in facts],
                 word_count=len(markdown.split()),
                 conflicts=conflicts or [],
+                confidence=confidence,
             )
 
         return await execute_with_resilience(
@@ -232,6 +254,7 @@ class AgentManager:
             facts,
             citations,
             conflicts,
+            confidence,
             max_retries=self.max_retries,
             timeout_seconds=self.timeout_seconds,
             agent_name="ReportAgent",
@@ -313,10 +336,17 @@ class AgentManager:
                 output_data={"citations_count": len(citations)}
             )
 
+            # ── Step 4b: Confidence Scorer ────────────────────────────
+            confidence_score = await self.call_confidence_scorer(
+                raw_sources, verified_facts, conflicts, citations, job_id=job_id
+            )
+
             # ── Step 5: Report Generator ──────────────────────────────
             step5_start = time.perf_counter()
             await self._update_job_progress(job_id, "in_progress", "ReportAgent", 95.0, start_time)
-            final_report = await self.call_report_generator(query, plan, verified_facts, citations, conflicts=conflicts)
+            final_report = await self.call_report_generator(
+                query, plan, verified_facts, citations, conflicts=conflicts, confidence=confidence_score
+            )
             step5_ms = int((time.perf_counter() - step5_start) * 1000)
             await self._log_step(
                 job_id, "ReportAgent", 5, "completed", step5_ms, cost_usd=0.0025,
