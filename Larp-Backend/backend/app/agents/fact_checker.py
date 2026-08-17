@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from app.agents.base import BaseAgentInterface, BaseAgentState
 from app.agents.search import SearchResultItem
+from app.schemas.conflict import SourceConflict
 
 
 class VerifiedFact(BaseModel):
@@ -36,6 +37,20 @@ class FactCheckerAgentInterface(BaseAgentInterface):
 
         Returns:
             List of VerifiedFact claims.
+        """
+        pass
+
+    @abstractmethod
+    async def detect_conflicts(
+        self, raw_sources: List[SearchResultItem]
+    ) -> List[SourceConflict]:
+        """Detect source conflicts across raw search sources.
+
+        Args:
+            raw_sources: List of SearchResultItem retrieved by SearchAgent.
+
+        Returns:
+            List of detected SourceConflict objects.
         """
         pass
 

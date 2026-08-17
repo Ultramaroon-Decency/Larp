@@ -116,6 +116,7 @@ class ReportService:
         key_findings: List[Dict[str, Any]],
         sections: Optional[List[Dict[str, str]]] = None,
         citations: Optional[List[Dict[str, Any]]] = None,
+        conflicts: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         """Generate a clean, structured Markdown research report."""
         md = f"# {title}\n\n"
@@ -129,6 +130,38 @@ class ReportService:
                 statement = finding.get("finding") or finding.get("statement", "")
                 md += f"- **{topic}**: {statement}\n"
             md += "\n"
+
+        if conflicts:
+            md += "## Source Conflicts\n\n"
+            for conf in conflicts:
+                status = conf.get("status", "UNRESOLVED")
+                claim = conf.get("claim", "Factual discrepancy")
+                src_a = conf.get("source_a", {})
+                src_b = conf.get("source_b", {})
+                ev_a = conf.get("source_a_evidence", "")
+                ev_b = conf.get("source_b_evidence", "")
+                pref = conf.get("preferred_source")
+                reason = conf.get("resolution_reason")
+
+                if status == "RESOLVED":
+                    md += (
+                        f"### Conflict: {claim}\n"
+                        f"- **Source A** ({src_a.get('domain', 'web')}): {ev_a}\n"
+                        f"- **Source B** ({src_b.get('domain', 'web')}): {ev_b}\n"
+                        f"- **Status**: Resolved\n"
+                        f"- **Preferred Source**: [{src_a.get('title') or pref}]({pref})\n"
+                        f"- **Confidence**: {conf.get('confidence', 0.85)}\n"
+                        f"- **Resolution**: {reason}\n\n"
+                    )
+                else:
+                    md += (
+                        f"### ⚠ Unresolved Conflict: {claim}\n\n"
+                        f"Two credible sources report different values.\n\n"
+                        f"- **Source A** ({src_a.get('domain', 'web')}): {ev_a}\n"
+                        f"- **Source B** ({src_b.get('domain', 'web')}): {ev_b}\n"
+                        f"- **Status**: Unresolved\n"
+                        f"- **Details**: Larp could not confidently determine which value is correct.\n\n"
+                    )
 
         if sections:
             for sec in sections:

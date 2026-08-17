@@ -1,13 +1,14 @@
 """Report Agent interface definition for LangGraph."""
 
 from abc import abstractmethod
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 from app.agents.base import BaseAgentInterface, BaseAgentState
 from app.agents.citation import CitationItem
 from app.agents.fact_checker import VerifiedFact
 from app.agents.planner import PlanOutput
+from app.schemas.conflict import SourceConflict
 
 
 class FinalReportOutput(BaseModel):
@@ -18,6 +19,7 @@ class FinalReportOutput(BaseModel):
     content_markdown: str = Field(description="Full Markdown report body with in-text citations")
     key_findings: List[Dict[str, Any]] = Field(description="Structured key findings list")
     word_count: int = Field(ge=0, description="Total report word count")
+    conflicts: List[SourceConflict] = Field(default_factory=list, description="Source conflicts identified")
 
 
 class ReportAgentInterface(BaseAgentInterface):
@@ -34,18 +36,9 @@ class ReportAgentInterface(BaseAgentInterface):
         plan: PlanOutput,
         facts: List[VerifiedFact],
         citations: List[CitationItem],
+        conflicts: Optional[List[SourceConflict]] = None,
     ) -> FinalReportOutput:
-        """Synthesize verified facts and citations into a comprehensive Markdown report.
-
-        Args:
-            query: Original user research prompt.
-            plan: PlanOutput from PlannerAgent.
-            facts: Verified facts from FactCheckerAgent.
-            citations: Formatted citations from CitationAgent.
-
-        Returns:
-            FinalReportOutput containing summary, Markdown content, and key findings.
-        """
+        """Synthesize verified facts, citations, and conflicts into a comprehensive Markdown report."""
         pass
 
     @abstractmethod
