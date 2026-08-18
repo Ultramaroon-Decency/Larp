@@ -1,12 +1,13 @@
-"""Mock implementations of agent interfaces for local testing and fallback execution without AI API keys."""
-
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from app.agents.base import BaseAgentState
 from app.agents.planner import PlanOutput, PlannerAgentInterface
 from app.agents.search import SearchAgentInterface, SearchResultItem
 from app.agents.fact_checker import FactCheckerAgentInterface, VerifiedFact
 from app.agents.citation import CitationAgentInterface, CitationItem
 from app.agents.report import FinalReportOutput, ReportAgentInterface
+from app.schemas.confidence import ConfidenceScore
+from app.schemas.conflict import ConflictStatus, SourceConflict
+from app.services.conflict_detector import SourceConflictDetector
 
 
 class MockPlannerAgent(PlannerAgentInterface):
@@ -76,12 +77,20 @@ class MockFactCheckerAgent(FactCheckerAgentInterface):
             )
         return verified
 
+    async def detect_conflicts(
+        self, raw_sources: List[SearchResultItem]
+    ) -> List[SourceConflict]:
+        sources_dicts = [s.model_dump() for s in raw_sources]
+        return SourceConflictDetector.detect_conflicts(sources_dicts)
+
     async def execute(self, state: BaseAgentState) -> BaseAgentState:
         raw_sources = [
             SearchResultItem(**s) for s in state.get("raw_sources", [])
         ]
         facts = await self.verify_facts(raw_sources)
+        conflicts = await self.detect_conflicts(raw_sources)
         state["verified_facts"] = [f.model_dump() for f in facts]
+        state["source_conflicts"] = [c.model_dump() for c in conflicts]
         state["current_agent"] = self.agent_name
         return state
 
@@ -123,15 +132,59 @@ class MockReportAgent(ReportAgentInterface):
         plan: PlanOutput,
         facts: List[VerifiedFact],
         citations: List[CitationItem],
+        conflicts: Optional[List[SourceConflict]] = None,
+        confidence: Optional[ConfidenceScore] = None,
     ) -> FinalReportOutput:
+        conflicts_list = conflicts or []
         body_markdown = (
             f"# Research Report: {query}\n\n"
             f"## Executive Summary\n"
             f"This research report evaluates {query} across {len(facts)} verified facts and {len(citations)} citations.\n\n"
-            f"## Key Findings\n"
         )
+
+        if confidence:
+            level_str = confidence.confidence_level.value if hasattr(confidence.confidence_level, "value") else str(confidence.confidence_level)
+            body_markdown += (
+                f"## Confidence\n\n"
+                f"**Overall Confidence**: {confidence.overall_score:.0f}%\n"
+                f"**Level**: {level_str}\n\n"
+                f"### Confidence Breakdown\n\n"
+                f"- **Source Quality**: {confidence.source_quality_score:.0f}%\n"
+                f"- **Evidence Coverage**: {confidence.evidence_coverage_score:.0f}%\n"
+                f"- **Source Agreement**: {confidence.source_agreement_score:.0f}%\n"
+                f"- **Citation Coverage**: {confidence.citation_coverage_score:.0f}%\n"
+                f"- **Conflict Penalty**: -{confidence.conflict_penalty:.0f}\n\n"
+                f"### Explanation\n\n"
+                f"{confidence.explanation}\n\n"
+            )
+
+        body_markdown += "## Key Findings\n\n"
         for i, f in enumerate(facts):
             body_markdown += f"- {f.fact_statement} {citations[i].in_text_tag if i < len(citations) else ''}\n"
+
+        if conflicts_list:
+            body_markdown += "\n## Source Conflicts\n\n"
+            for conflict in conflicts_list:
+                status_str = conflict.status.value if isinstance(conflict.status, ConflictStatus) else str(conflict.status)
+                if status_str == "RESOLVED":
+                    body_markdown += (
+                        f"### Conflict: {conflict.claim}\n"
+                        f"- **Source A** ({conflict.source_a.domain}): {conflict.source_a_evidence}\n"
+                        f"- **Source B** ({conflict.source_b.domain}): {conflict.source_b_evidence}\n"
+                        f"- **Status**: Resolved\n"
+                        f"- **Preferred Source**: [{conflict.source_a.title or conflict.source_a.url}]({conflict.preferred_source})\n"
+                        f"- **Confidence**: {conflict.confidence}\n"
+                        f"- **Resolution**: {conflict.resolution_reason}\n\n"
+                    )
+                else:
+                    body_markdown += (
+                        f"### ⚠ Unresolved Conflict: {conflict.claim}\n\n"
+                        f"Two credible sources report different values.\n\n"
+                        f"- **Source A** ({conflict.source_a.domain}): {conflict.source_a_evidence}\n"
+                        f"- **Source B** ({conflict.source_b.domain}): {conflict.source_b_evidence}\n"
+                        f"- **Status**: Unresolved\n"
+                        f"- **Details**: Larp could not confidently determine which value is correct.\n\n"
+                    )
 
         return FinalReportOutput(
             title=f"Research Report: {query}",
@@ -139,6 +192,8 @@ class MockReportAgent(ReportAgentInterface):
             content_markdown=body_markdown,
             key_findings=[{"statement": f.fact_statement} for f in facts],
             word_count=len(body_markdown.split()),
+            conflicts=conflicts_list,
+            confidence=confidence,
         )
 
     async def execute(self, state: BaseAgentState) -> BaseAgentState:
@@ -146,8 +201,12 @@ class MockReportAgent(ReportAgentInterface):
         plan = PlanOutput(**state.get("plan", {}))
         facts = [VerifiedFact(**f) for f in state.get("verified_facts", [])]
         citations = [CitationItem(**c) for c in state.get("citations", [])]
+        conflicts_raw = state.get("source_conflicts", [])
+        conflicts = [SourceConflict(**c) for c in conflicts_raw] if conflicts_raw else []
+        confidence_raw = state.get("confidence_score")
+        confidence = ConfidenceScore(**confidence_raw) if confidence_raw else None
 
-        report = await self.synthesize_report(query, plan, facts, citations)
+        report = await self.synthesize_report(query, plan, facts, citations, conflicts, confidence)
         state["final_report"] = report.model_dump()
         state["current_agent"] = self.agent_name
         return state

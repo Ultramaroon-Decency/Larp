@@ -2,7 +2,7 @@
 
 import time
 import traceback
-from typing import List, Optional
+from typing import Any, List, Optional
 from uuid import UUID
 
 from app.agents.citation import CitationAgentInterface, CitationItem
@@ -23,6 +23,8 @@ from app.repositories.agent_execution_log_repository import AgentExecutionLogRep
 from app.repositories.research_job_repository import ResearchJobRepository
 from app.repositories.research_report_repository import ResearchReportRepository
 from app.repositories.research_source_repository import ResearchSourceRepository
+from app.schemas.confidence import ConfidenceScore
+from app.schemas.conflict import SourceConflict
 from app.utils.resilience import execute_with_resilience
 
 logger = get_logger("agent_manager")
@@ -49,6 +51,7 @@ class AgentManager:
         fact_checker_agent: Optional[FactCheckerAgentInterface] = None,
         citation_agent: Optional[CitationAgentInterface] = None,
         report_agent: Optional[ReportAgentInterface] = None,
+        payment_manager: Optional[Any] = None,
         max_retries: int = 3,
         timeout_seconds: float = 30.0,
     ) -> None:
@@ -65,6 +68,12 @@ class AgentManager:
         self.fact_checker_agent = fact_checker_agent or MockFactCheckerAgent()
         self.citation_agent = citation_agent or MockCitationAgent()
         self.report_agent = report_agent or MockReportAgent()
+
+        if payment_manager:
+            self.payment_manager = payment_manager
+        else:
+            from app.services.payment_manager import PaymentManager
+            self.payment_manager = PaymentManager()
 
     # ── Step 1: Call Planner ───────────────────────────────────────────
     async def call_planner(self, query: str, depth: str) -> PlanOutput:
@@ -140,6 +149,31 @@ class AgentManager:
             fallback_factory=fallback_fact_checker,
         )
 
+    # ── Step 3b: Call Conflict Detector ──────────────────────────────
+    async def call_conflict_detector(
+        self, raw_sources: List[SearchResultItem], job_id: Optional[UUID] = None
+    ) -> List[SourceConflict]:
+        """Call SourceConflictDetector with retry logic, 30s timeout, and fallback empty list."""
+        def fallback_conflicts() -> List[SourceConflict]:
+            return []
+
+        async def detect_fn(sources):
+            if hasattr(self.fact_checker_agent, "detect_conflicts"):
+                return await self.fact_checker_agent.detect_conflicts(sources)
+            from app.services.conflict_detector import SourceConflictDetector
+            return SourceConflictDetector.detect_conflicts(
+                [s.model_dump() for s in sources], job_id=str(job_id) if job_id else None
+            )
+
+        return await execute_with_resilience(
+            detect_fn,
+            raw_sources,
+            max_retries=self.max_retries,
+            timeout_seconds=self.timeout_seconds,
+            agent_name="FactCheckerAgent",
+            fallback_factory=fallback_conflicts,
+        )
+
     # ── Step 4: Call Citation Generator ───────────────────────────────
     async def call_citation_generator(
         self, verified_facts: List[VerifiedFact]
@@ -165,6 +199,25 @@ class AgentManager:
             fallback_factory=fallback_citations,
         )
 
+    # ── Step 3c: Call Confidence Scorer ──────────────────────────────
+    async def call_confidence_scorer(
+        self,
+        raw_sources: List[SearchResultItem],
+        verified_facts: List[VerifiedFact],
+        conflicts: List[SourceConflict],
+        citations: List[CitationItem],
+        job_id: Optional[UUID] = None,
+    ) -> ConfidenceScore:
+        """Call ConfidenceScorer to calculate evidence-backed confidence score."""
+        from app.services.confidence_scorer import ConfidenceScorer
+        return ConfidenceScorer.calculate_confidence(
+            raw_sources=[s.model_dump() for s in raw_sources],
+            verified_facts=[f.model_dump() for f in verified_facts],
+            source_conflicts=[c.model_dump() for c in conflicts],
+            citations=[c.model_dump() for c in citations],
+            job_id=str(job_id) if job_id else None,
+        )
+
     # ── Step 5: Call Report Generator ──────────────────────────────────
     async def call_report_generator(
         self,
@@ -172,6 +225,8 @@ class AgentManager:
         plan: PlanOutput,
         facts: List[VerifiedFact],
         citations: List[CitationItem],
+        conflicts: Optional[List[SourceConflict]] = None,
+        confidence: Optional[ConfidenceScore] = None,
     ) -> FinalReportOutput:
         """Call Report Generator Agent with retry logic, 30s timeout, and fallback report."""
         def fallback_report() -> FinalReportOutput:
@@ -188,6 +243,8 @@ class AgentManager:
                 content_markdown=markdown,
                 key_findings=[{"statement": f.fact_statement} for f in facts],
                 word_count=len(markdown.split()),
+                conflicts=conflicts or [],
+                confidence=confidence,
             )
 
         return await execute_with_resilience(
@@ -196,6 +253,8 @@ class AgentManager:
             plan,
             facts,
             citations,
+            conflicts,
+            confidence,
             max_retries=self.max_retries,
             timeout_seconds=self.timeout_seconds,
             agent_name="ReportAgent",
@@ -254,15 +313,16 @@ class AgentManager:
                     except Exception:
                         pass
 
-            # ── Step 3: Fact Checker Agent ────────────────────────────
+            # ── Step 3: Fact Checker Agent & Conflict Detection ───────
             step3_start = time.perf_counter()
             await self._update_job_progress(job_id, "in_progress", "FactCheckerAgent", 65.0, start_time)
             verified_facts = await self.call_fact_checker(raw_sources)
+            conflicts = await self.call_conflict_detector(raw_sources, job_id=job_id)
             step3_ms = int((time.perf_counter() - step3_start) * 1000)
             await self._log_step(
                 job_id, "FactCheckerAgent", 3, "completed", step3_ms, cost_usd=0.0012,
                 input_data={"raw_sources_count": len(raw_sources)},
-                output_data={"verified_facts_count": len(verified_facts)}
+                output_data={"verified_facts_count": len(verified_facts), "source_conflicts_count": len(conflicts)}
             )
 
             # ── Step 4: Citation Agent ────────────────────────────────
@@ -276,10 +336,17 @@ class AgentManager:
                 output_data={"citations_count": len(citations)}
             )
 
+            # ── Step 4b: Confidence Scorer ────────────────────────────
+            confidence_score = await self.call_confidence_scorer(
+                raw_sources, verified_facts, conflicts, citations, job_id=job_id
+            )
+
             # ── Step 5: Report Generator ──────────────────────────────
             step5_start = time.perf_counter()
             await self._update_job_progress(job_id, "in_progress", "ReportAgent", 95.0, start_time)
-            final_report = await self.call_report_generator(query, plan, verified_facts, citations)
+            final_report = await self.call_report_generator(
+                query, plan, verified_facts, citations, conflicts=conflicts, confidence=confidence_score
+            )
             step5_ms = int((time.perf_counter() - step5_start) * 1000)
             await self._log_step(
                 job_id, "ReportAgent", 5, "completed", step5_ms, cost_usd=0.0025,

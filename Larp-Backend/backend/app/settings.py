@@ -192,6 +192,32 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── Autonomous Wallet & Budget Settings ───────────────────────────
+    wallet_mode: str = Field(
+        default="simulation",
+        description="Wallet operation mode: 'simulation' or 'evm'.",
+    )
+    simulation_wallet_balance: float = Field(
+        default=1.00,
+        ge=0.0,
+        description="Default virtual USD balance for simulation wallet.",
+    )
+    research_budget: float = Field(
+        default=0.50,
+        ge=0.0,
+        description="Default allocated spending budget per research job in USD.",
+    )
+    max_transaction_amount: float = Field(
+        default=0.25,
+        ge=0.0,
+        description="Maximum single transaction spending limit in USD.",
+    )
+    daily_spending_limit: float = Field(
+        default=10.00,
+        ge=0.0,
+        description="Maximum total daily spending limit across all research jobs in USD.",
+    )
+
     # ── Pydantic Settings Configuration ────────────────────────────────
     model_config = SettingsConfigDict(
         # Load variables from a .env file in the project root.

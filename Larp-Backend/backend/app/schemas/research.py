@@ -4,6 +4,8 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
+from app.schemas.confidence import ConfidenceScoreRead
+from app.schemas.conflict import SourceConflictRead
 
 
 class ResearchJobCreate(BaseModel):
@@ -114,6 +116,8 @@ class ResearchReportRead(BaseModel):
     summary: str
     content_markdown: str
     key_findings: Optional[List[Dict[str, Any]]] = None
+    conflicts: Optional[List[SourceConflictRead]] = Field(default_factory=list)
+    confidence: Optional[ConfidenceScoreRead] = None
     word_count: int
     version: int = 1
     is_latest: bool = True
@@ -122,10 +126,12 @@ class ResearchReportRead(BaseModel):
 
 
 class ResearchJobDetailsRead(ResearchJobRead):
-    """Full representation of a ResearchJob including report and sources."""
+    """Full representation of a ResearchJob including report, sources, and conflicts."""
 
     report: Optional[ResearchReportRead] = None
     sources: List[ResearchSourceRead] = Field(default_factory=list)
+    conflicts: List[SourceConflictRead] = Field(default_factory=list)
+    confidence: Optional[ConfidenceScoreRead] = None
 
 
 # Backwards compatibility aliases

@@ -116,11 +116,39 @@ class ReportService:
         key_findings: List[Dict[str, Any]],
         sections: Optional[List[Dict[str, str]]] = None,
         citations: Optional[List[Dict[str, Any]]] = None,
+        conflicts: Optional[List[Dict[str, Any]]] = None,
+        confidence: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Generate a clean, structured Markdown research report."""
         md = f"# {title}\n\n"
         md += "## Executive Summary\n"
         md += f"{summary}\n\n"
+
+        if confidence:
+            overall = confidence.get("overall_score", 85.0)
+            level = confidence.get("confidence_level", "HIGH")
+            if hasattr(level, "value"):
+                level = level.value
+            sq = confidence.get("source_quality_score", 85.0)
+            ec = confidence.get("evidence_coverage_score", 85.0)
+            sa = confidence.get("source_agreement_score", 85.0)
+            cc = confidence.get("citation_coverage_score", 85.0)
+            cp = confidence.get("conflict_penalty", 0.0)
+            expl = confidence.get("explanation", "High confidence report.")
+
+            md += (
+                f"## Confidence\n\n"
+                f"**Overall Confidence**: {overall:.0f}%\n"
+                f"**Level**: {level}\n\n"
+                f"### Confidence Breakdown\n\n"
+                f"- **Source Quality**: {sq:.0f}%\n"
+                f"- **Evidence Coverage**: {ec:.0f}%\n"
+                f"- **Source Agreement**: {sa:.0f}%\n"
+                f"- **Citation Coverage**: {cc:.0f}%\n"
+                f"- **Conflict Penalty**: -{cp:.0f}\n\n"
+                f"### Explanation\n\n"
+                f"{expl}\n\n"
+            )
 
         if key_findings:
             md += "## Key Findings\n"
@@ -129,6 +157,38 @@ class ReportService:
                 statement = finding.get("finding") or finding.get("statement", "")
                 md += f"- **{topic}**: {statement}\n"
             md += "\n"
+
+        if conflicts:
+            md += "## Source Conflicts\n\n"
+            for conf in conflicts:
+                status = conf.get("status", "UNRESOLVED")
+                claim = conf.get("claim", "Factual discrepancy")
+                src_a = conf.get("source_a", {})
+                src_b = conf.get("source_b", {})
+                ev_a = conf.get("source_a_evidence", "")
+                ev_b = conf.get("source_b_evidence", "")
+                pref = conf.get("preferred_source")
+                reason = conf.get("resolution_reason")
+
+                if status == "RESOLVED":
+                    md += (
+                        f"### Conflict: {claim}\n"
+                        f"- **Source A** ({src_a.get('domain', 'web')}): {ev_a}\n"
+                        f"- **Source B** ({src_b.get('domain', 'web')}): {ev_b}\n"
+                        f"- **Status**: Resolved\n"
+                        f"- **Preferred Source**: [{src_a.get('title') or pref}]({pref})\n"
+                        f"- **Confidence**: {conf.get('confidence', 0.85)}\n"
+                        f"- **Resolution**: {reason}\n\n"
+                    )
+                else:
+                    md += (
+                        f"### ⚠ Unresolved Conflict: {claim}\n\n"
+                        f"Two credible sources report different values.\n\n"
+                        f"- **Source A** ({src_a.get('domain', 'web')}): {ev_a}\n"
+                        f"- **Source B** ({src_b.get('domain', 'web')}): {ev_b}\n"
+                        f"- **Status**: Unresolved\n"
+                        f"- **Details**: Larp could not confidently determine which value is correct.\n\n"
+                    )
 
         if sections:
             for sec in sections:

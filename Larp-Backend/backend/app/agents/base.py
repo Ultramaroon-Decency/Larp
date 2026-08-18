@@ -19,6 +19,9 @@ class BaseAgentState(TypedDict, total=False):
     plan: Optional[Dict[str, Any]]
     raw_sources: Optional[List[Dict[str, Any]]]
     verified_facts: Optional[List[Dict[str, Any]]]
+    source_conflicts: Optional[List[Dict[str, Any]]]
+    confidence_score: Optional[Dict[str, Any]]
+    claim_confidences: Optional[List[Dict[str, Any]]]
     citations: Optional[List[Dict[str, Any]]]
     final_report: Optional[Dict[str, Any]]
     current_step: int
