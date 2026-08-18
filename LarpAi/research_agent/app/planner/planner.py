@@ -166,3 +166,37 @@ class PlannerAgent:
             unvisited.difference_update(ready_tasks)
 
         return stages
+
+    async def create_delta_plan(self, original_plan: ExecutionPlan, follow_up: str) -> ExecutionPlan:
+        """
+        Interactive Re-Planning: Generates an execution plan containing only the new / delta
+        subtasks required to answer a follow-up query, preserving cached results.
+        """
+        clean_follow_up = follow_up.strip()
+        if not clean_follow_up:
+            raise PlannerError("Follow-up query cannot be empty.")
+
+        logger.info(f"Generating Delta Plan for follow-up: '{clean_follow_up[:60]}' relative to plan '{original_plan.plan_id}'")
+
+        # Decompose the follow-up prompt into targeted tasks
+        delta_tasks = [
+            ResearchTask(
+                task_id=f"task-delta-{uuid.uuid4().hex[:4]}",
+                description=f"Resolve follow-up: '{clean_follow_up}' relying on previous context.",
+                expected_output="Delta findings and source references.",
+                estimated_services=["search", "summary"],
+                dependencies=[],
+                priority=5
+            )
+        ]
+
+        # Stage calculation for delta tasks
+        execution_order = self.compute_execution_order(delta_tasks)
+
+        return ExecutionPlan(
+            plan_id=f"plan-delta-{uuid.uuid4().hex[:8]}",
+            query=clean_follow_up,
+            tasks=delta_tasks,
+            execution_order=execution_order
+        )
+

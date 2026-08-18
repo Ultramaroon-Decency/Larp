@@ -374,3 +374,38 @@ class TestExecutorSelfHealing:
         result = await executor._self_healing_search(mock_tool, "test query", "search")
         # Should have called arxiv fallback
         assert mock_arxiv.called or result is not None
+
+
+# ── CriticAgent ──────────────────────────────────────────────────────────────
+
+from research_agent.app.agents.critic import CriticAgent
+
+
+class TestCriticAgent:
+
+    @pytest.mark.asyncio
+    async def test_critic_generates_credibility_warnings_for_low_citation_density(self):
+        # Only 1 source backing the verified claim
+        aggregated = _make_aggregated(sources=1, snippet_words=10, claims=1)
+        critic = CriticAgent()
+        md = await critic.analyze("test query", aggregated)
+        assert "Low citation density" in md or "warnings" in md or "Factual Rigor" in md
+
+    @pytest.mark.asyncio
+    async def test_critic_flags_logical_overgeneralizations(self):
+        aggregated = _make_aggregated(sources=3, snippet_words=20, claims=2)
+        # Inject logical overgeneralization word 'always'
+        aggregated.all_verified_claims[0].claim = "The test results always support the primary conclusion."
+        critic = CriticAgent()
+        md = await critic.analyze("test query", aggregated)
+        assert "logical generalization" in md.lower() or "always" in md.lower()
+
+    @pytest.mark.asyncio
+    async def test_critic_generates_counter_arguments_vs_query(self):
+        aggregated = _make_aggregated(sources=3, snippet_words=25, claims=2)
+        critic = CriticAgent()
+        md = await critic.analyze("Solar vs Wind Energy comparison", aggregated)
+        assert "alternative viewpoints" in md.lower() or "counter-arguments" in md.lower()
+        # Should contain the comparative entity counter-arguments fallback
+        assert "solar" in md.lower() or "wind" in md.lower()
+

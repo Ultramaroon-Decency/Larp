@@ -85,4 +85,7 @@ class ScrapeResult(BaseModel):
     content: str = Field(..., description="Cleaned body text extracted from the page.")
     word_count: int = Field(default=0, description="Word count of the extracted body text.")
     status_code: int = Field(default=200, description="HTTP status code returned by the target host.")
+    extracted_tables: List[str] = Field(default_factory=list, description="Markdown formatting of tables extracted from page / PDFs.")
+    image_analyses: List[str] = Field(default_factory=list, description="Text analysis/transcriptions of scraped charts or diagrams.")
+
 

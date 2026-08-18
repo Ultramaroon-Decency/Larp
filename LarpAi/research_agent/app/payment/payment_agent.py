@@ -2,6 +2,7 @@ import uuid
 import logging
 from typing import Optional, Dict, Any, Callable, Awaitable
 from research_agent.app.models.payment import PaymentRequirement, PaymentReceipt, PaymentTransaction
+from research_agent.app.payment.web3_wallet import Web3WalletSigner
 
 logger = logging.getLogger(__name__)
 
@@ -16,12 +17,18 @@ class PaymentAgent:
     Payment Agent responsible for detecting HTTP 402 Payment Required status,
     processing autonomous x402 micro-payments, generating settlement receipts,
     and handling automatic request retries.
+
+    New in this version:
+        - Cryptographic Web3 Signatures: Signs challenge nonces returned by paywalls
+          using Ed25519-like keypair HMAC-SHA256 tokens, verifying key ownership.
     """
 
-    def __init__(self, wallet_balance: float = 100.0, auto_approve_limit: float = 10.0):
+    def __init__(self, wallet_balance: float = 100.0, auto_approve_limit: float = 10.0, private_key_hex: str = ""):
         self.wallet_balance = wallet_balance
         self.auto_approve_limit = auto_approve_limit
         self.transaction_history: Dict[str, PaymentTransaction] = {}
+        # Instantiate cryptographic Web3 signer
+        self.signer = Web3WalletSigner(private_key_hex=private_key_hex)
 
     def is_payment_required(self, status_code: int, headers: Optional[Dict[str, str]] = None) -> bool:
         """
@@ -80,11 +87,15 @@ class PaymentAgent:
         self.wallet_balance -= req.price_amount
         tx_id = f"tx-x402-{uuid.uuid4().hex[:10]}"
 
+        # Cryptographically sign the server challenge nonce using private key
+        signature = self.signer.sign_challenge(req.payment_nonce)
+
         receipt = PaymentReceipt(
             tx_id=tx_id,
             payment_nonce=req.payment_nonce,
             status="settled",
-            authorization_header=f"X402-Token {tx_id}:{req.payment_nonce}"
+            # Standardized Web3 x402 Bearer token: tx_id:signature:nonce
+            authorization_header=f"X402-Token {tx_id}:{signature}:{req.payment_nonce}"
         )
 
         # Log transaction record

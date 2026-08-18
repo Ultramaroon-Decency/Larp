@@ -37,8 +37,10 @@ class ResearchExecutorAgent:
         self,
         tool_registry: Optional[Dict[str, BaseTool]] = None,
         cache: Optional[BaseCache] = None,
-        on_event: Optional[Any] = None
+        on_event: Optional[Any] = None,
+        llm_provider: Optional[Any] = None
     ):
+        self.llm_provider = llm_provider
         if tool_registry is not None:
             self.tools = tool_registry
         else:
@@ -53,11 +55,10 @@ class ResearchExecutorAgent:
 
             self.tools: Dict[str, BaseTool] = {
                 "search": search_tool,
-                "scraper": WebScraperTool(),
+                "scraper": WebScraperTool(llm_provider=self.llm_provider),
                 "fact_check": MockFactCheckTool(),
                 "summary": MockSummaryTool(),
                 "citation": MockCitationTool(),
-                # NEW: Academic and background context tools (free, no API key required)
                 "arxiv": ArxivSearchTool(),
                 "wikipedia": WikipediaTool(),
             }
@@ -77,6 +78,21 @@ class ResearchExecutorAgent:
         """
         self.tools[service_name] = tool
         logger.info(f"Registered tool '{tool.name}' for service '{service_name}'.")
+
+    async def _warm_cache_for_tasks(self, tasks: List[ResearchTask], query: str) -> None:
+        """
+        Speculative Pre-Fetching: Warm the cache for upcoming tasks
+        by dispatching search and scraper tools before they are officially scheduled.
+        """
+        for task in tasks:
+            logger.info(f"Speculative Pre-Fetching: Warming cache for task '{task.task_id}'")
+            services_to_warm = [s for s in (task.estimated_services or ["search"]) if s in ("search", "scraper", "arxiv", "wikipedia")]
+            if services_to_warm:
+                # Dispatch tool calls in background; outputs are saved to self.cache automatically
+                await asyncio.gather(
+                    *[self._dispatch_service(s, task, query) for s in services_to_warm],
+                    return_exceptions=True
+                )
 
     async def execute_plan(self, plan: ExecutionPlan, max_depth: int = 1) -> PlanExecutionResult:
         """
@@ -102,11 +118,27 @@ class ResearchExecutorAgent:
             if not stage_tasks:
                 continue
 
+            # Speculative Pre-Fetching: Look ahead to the next stage if available
+            prefetch_task = None
+            if stage_idx + 1 < len(plan.execution_order):
+                next_stage_ids = plan.execution_order[stage_idx + 1]
+                next_tasks = [task_map[tid] for tid in next_stage_ids if tid in task_map]
+                if next_tasks:
+                    logger.info(f"Speculative Pre-Fetching: Triggering cache warming for Stage {stage_idx + 2} in background.")
+                    prefetch_task = asyncio.create_task(self._warm_cache_for_tasks(next_tasks, plan.query))
+
             # Execute all tasks within current stage in parallel using asyncio.gather
             results: List[TaskExecutionResult] = await asyncio.gather(
                 *[self._execute_single_task(task, plan.query) for task in stage_tasks],
                 return_exceptions=False
             )
+
+            # Await the speculative prefetch to ensure cache is primed
+            if prefetch_task:
+                try:
+                    await asyncio.wait_for(prefetch_task, timeout=5.0)
+                except Exception as e:
+                    logger.debug(f"Speculative Pre-Fetching: Background warming completed or paused: {e}")
 
             for res in results:
                 self._emit("task_complete", {"task_id": res.task_id, "status": res.status})

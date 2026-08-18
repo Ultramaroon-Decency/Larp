@@ -27,6 +27,13 @@ class BaseLLMProvider(ABC):
         """
         pass
 
+    @abstractmethod
+    async def generate_vision_text(self, image_bytes: bytes, prompt: str) -> str:
+        """
+        Processes image inputs (charts, tables, diagrams) and generates structured markdown text.
+        """
+        pass
+
 
 class MockLLMProvider(BaseLLMProvider):
     """
@@ -82,3 +89,15 @@ class MockLLMProvider(BaseLLMProvider):
             return PlanDecompositionSchema(tasks=tasks) # type: ignore
 
         raise NotImplementedError(f"MockLLMProvider requires a pre-set mock_response for schema {schema.__name__}.")
+
+    async def generate_vision_text(self, image_bytes: bytes, prompt: str) -> str:
+        """Mock vision response for charts and tables parsing."""
+        if "table" in prompt.lower() or "chart" in prompt.lower():
+            return (
+                "| Category | Baseline | Improved | % Change |\n"
+                "| :--- | :---: | :---: | :---: |\n"
+                "| Solar Efficiency | 15.2% | 22.8% | +50.0% |\n"
+                "| Cost per Watt | $1.20 | $0.80 | -33.3% |"
+            )
+        return "Mock vision description of chart visual elements."
+

@@ -107,6 +107,24 @@ class ResultAggregatorAgent:
                                 seen_citations.add(c_url)
                                 citations.append(CitationItem(**cite_obj))
 
+                    # 5. Process Scraper (Multi-Modal Vision Tables / Image Analyses)
+                    elif service_name == "scraper":
+                        # Also check if scraper returns clean body text to append as a takeaway
+                        body_txt = payload.get("content", "")
+                        if body_txt and len(body_txt) < 300 and body_txt not in seen_takeaways:
+                            seen_takeaways.add(body_txt)
+                            takeaways.append(body_txt)
+
+        # Gather vision artifacts from scraper payloads across all completed tasks
+        extracted_tables: List[str] = []
+        image_analyses: List[str] = []
+        for stage in exec_result.stage_results:
+            for task_res in stage:
+                for s_name, s_payload in task_res.service_results.items():
+                    if s_name == "scraper" and isinstance(s_payload, dict):
+                        extracted_tables.extend(s_payload.get("extracted_tables", []))
+                        image_analyses.extend(s_payload.get("image_analyses", []))
+
         # Compute weighted confidence: status weight × raw score, normalised by total weight.
         # This gives higher influence to 'verified' claims and penalises 'disputed' evidence.
         if verified_claims:
@@ -128,8 +146,11 @@ class ResultAggregatorAgent:
             all_verified_claims=verified_claims,
             all_citations=citations,
             total_sources_count=len(search_results) + len(citations),
-            average_confidence_score=round(avg_confidence, 3)
+            average_confidence_score=round(avg_confidence, 3),
+            extracted_tables=extracted_tables,
+            image_analyses=image_analyses
         )
 
-        logger.info(f"Aggregation complete: {len(search_results)} search items, {len(verified_claims)} claims, {len(citations)} citations.")
+        logger.info(f"Aggregation complete: {len(search_results)} search items, {len(verified_claims)} claims, {len(citations)} citations, {len(extracted_tables)} vision tables.")
         return aggregated
+

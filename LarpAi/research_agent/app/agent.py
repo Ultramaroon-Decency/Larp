@@ -2,13 +2,15 @@ import logging
 from typing import Optional, Callable, Dict, Any
 from research_agent.app.models.plan import ExecutionPlan
 from research_agent.app.models.report import ResearchReport
+from research_agent.app.models.aggregator import AggregatedResearchData
 from research_agent.app.planner import PlannerAgent
 from research_agent.app.executor import ResearchExecutorAgent
-from research_agent.app.agents import ResultAggregatorAgent
+from research_agent.app.agents import ResultAggregatorAgent, CriticAgent
 from research_agent.app.agents.evaluator import EvaluatorAgent
 from research_agent.app.report import ReportGeneratorAgent
 from research_agent.app.services.llm_base import BaseLLMProvider
 from research_agent.app.services.llm_adapters import get_llm_provider
+from research_agent.app.services.llm_router import LLMRouter
 from research_agent.app.payment import PaymentAgent
 from research_agent.app.utils.contradiction_detector import ContradictionDetector
 
@@ -27,6 +29,10 @@ class LarpAgent:
         - ContradictionDetector: Pairwise claim conflict analysis. Appends a
           dedicated "⚠️ Conflicting Evidence" section to the report when conflicts
           are detected between sources.
+        - CriticAgent: Adversarial peer review stressing test for logical flaws,
+          objectivity, source authority, and alternative/counter-arguments.
+        - LLMRouter: Dynamic cost/latency routing of specific LLM models based on
+          task category (planning, verification, critique, formatting).
 
     Usage:
         from research_agent import LarpAgent
@@ -43,6 +49,7 @@ class LarpAgent:
         evaluator_threshold: float = 0.70,
         enable_reflexion: bool = True,
         enable_contradiction_detection: bool = True,
+        enable_critic: bool = True,
     ):
         """
         Args:
@@ -55,19 +62,34 @@ class LarpAgent:
                                             and triggers second pass on low-quality results.
             enable_contradiction_detection: If True, runs ContradictionDetector and injects
                                             a conflict section into the final report.
+            enable_critic:                  If True, runs CriticAgent to stress-test the report
+                                            and append alternative/counter-arguments.
         """
-        self.llm_provider = llm_provider or get_llm_provider()
+        self.llm_router = LLMRouter()
+        self.llm_provider = llm_provider or self.llm_router.get_provider_for_task("formatting")
         self.payment_agent = PaymentAgent(wallet_balance=wallet_balance)
         self.on_event = on_event
         self.enable_reflexion = enable_reflexion
         self.enable_contradiction_detection = enable_contradiction_detection
+        self.enable_critic = enable_critic
 
-        self.planner = PlannerAgent(llm_provider=self.llm_provider)
-        self.executor = ResearchExecutorAgent(on_event=self.on_event)
+        # Dynamic Routing Injection:
+        # Planner uses fast model (gemini-2.0-flash / gpt-4o-mini)
+        self.planner = PlannerAgent(llm_provider=self.llm_router.get_provider_for_task("planning"))
+        
+        # Scraper tool uses the router LLM provider configured inside ResearchExecutorAgent
+        self.executor = ResearchExecutorAgent(
+            llm_provider=self.llm_router.get_provider_for_task("verification"),
+            on_event=self.on_event
+        )
         self.aggregator = ResultAggregatorAgent()
         self.evaluator = EvaluatorAgent(threshold=evaluator_threshold)
         self.report_generator = ReportGeneratorAgent()
         self.contradiction_detector = ContradictionDetector()
+        
+        # Critic uses reasoning model (Claude 3.5 Sonnet / GPT-4o)
+        self.critic = CriticAgent(llm_provider=self.llm_router.get_provider_for_task("critique"))
+
 
     def _emit(self, event_type: str, payload: Dict[str, Any]) -> None:
         """Invokes on_event callback safely if registered."""
@@ -86,7 +108,7 @@ class LarpAgent:
         """
         Runs the end-to-end research workflow:
             Planning → Parallel Execution → Aggregation → [Evaluation → Second Pass?]
-            → Contradiction Detection → Cited Report Generation
+            → Contradiction Detection → Adversarial Critique → Cited Report Generation
 
         Args:
             query:       The research topic or question.
@@ -171,25 +193,36 @@ class LarpAgent:
                     "new_total_sources": aggregated.total_sources_count
                 })
 
-        # ── 5. Contradiction Detection (NEW) ──────────────────────────────────
+        # ── 5. Contradiction Detection ────────────────────────────────────────
         contradiction_section = ""
         if self.enable_contradiction_detection:
             self._emit("contradiction_detection_start", {})
             conflicts = self.contradiction_detector.detect(aggregated)
             if conflicts:
                 contradiction_section = self.contradiction_detector.format_markdown_section(conflicts)
-                logger.info(f"ContradictionDetector: {len(conflicts)} conflict(s) found and appended to report.")
+                logger.info(f"ContradictionDetector: {len(conflicts)} conflict(s) found.")
             self._emit("contradiction_detection_complete", {
                 "conflicts_found": len(conflicts)
             })
 
-        # ── 6. Report Generation Stage ─────────────────────────────────────────
+        # ── 6. Adversarial Critique Stage (NEW) ───────────────────────────────
+        critic_section = ""
+        if self.enable_critic:
+            self._emit("critic_start", {})
+            critic_section = await self.critic.analyze(clean_query, aggregated)
+            self._emit("critic_complete", {})
+
+        # ── 7. Report Generation Stage ────────────────────────────────────────
         self._emit("report_start", {"query": clean_query})
         report = self.report_generator.generate_report(aggregated, format_type=format_type)
 
-        # Append contradiction section to the report markdown if conflicts exist
+        # Append contradiction section if conflicts exist
         if contradiction_section:
             report.markdown_content = report.markdown_content + "\n" + contradiction_section
+
+        # Append adversarial critique section
+        if critic_section:
+            report.markdown_content = report.markdown_content + "\n" + critic_section
 
         self._emit("report_ready", {
             "report_id": report.report_id,
@@ -199,5 +232,72 @@ class LarpAgent:
 
         logger.info(f"LarpAgent completed research workflow successfully for report {report.report_id}.")
         return report
+
+    async def run_followup(
+        self,
+        original_plan: ExecutionPlan,
+        original_report: ResearchReport,
+        follow_up_prompt: str,
+        format_type: str = "FULL"
+    ) -> ResearchReport:
+        """
+        Interactive Follow-up Chat (Delta-DAG Re-Planning):
+        Plans and schedules only delta subtasks for the follow-up prompt,
+        preserves original findings, merges new facts/citations, and returns an updated report.
+        """
+        clean_prompt = follow_up_prompt.strip()
+        if not clean_prompt:
+            raise ValueError("Follow-up prompt cannot be empty.")
+
+        logger.info(f"LarpAgent starting follow-up resolution for query: '{clean_prompt[:50]}'")
+        self._emit("followup_start", {"prompt": clean_prompt, "original_plan_id": original_plan.plan_id})
+
+        # 1. Delta Planning Stage
+        delta_plan = await self.planner.create_delta_plan(original_plan, clean_prompt)
+        self._emit("followup_plan_created", {
+            "delta_plan_id": delta_plan.plan_id,
+            "tasks_count": len(delta_plan.tasks)
+        })
+
+        # 2. Delta Execution Stage
+        exec_result = await self.executor.execute_plan(delta_plan, max_depth=1)
+
+        # 3. Delta Aggregation & Merging
+        delta_aggregated = self.aggregator.aggregate_results(exec_result)
+
+        # Retrieve/reconstruct previous aggregated data to merge with
+        # To simulate merging, we construct a consolidated AggregatedResearchData
+        # (Alternatively in a database project this is loaded from DB)
+        merged_takeaways = list(set(delta_aggregated.synthesized_takeaways + [
+            # parse clean lines from original report as fallback
+            line.strip("- ") for line in original_report.markdown_content.split("\n")
+            if line.strip().startswith("- ") and len(line) < 300
+        ]))
+
+        merged_aggregated = AggregatedResearchData(
+            plan_id=original_plan.plan_id,
+            query=f"{original_plan.query} -> {clean_prompt}",
+            synthesized_takeaways=merged_takeaways[:12],  # Cap takeaways count
+            all_search_results=delta_aggregated.all_search_results,
+            all_verified_claims=delta_aggregated.all_verified_claims,
+            all_citations=delta_aggregated.all_citations,
+            total_sources_count=original_report.total_sources + delta_aggregated.total_sources_count,
+            average_confidence_score=round((original_report.confidence_score + delta_aggregated.average_confidence_score) / 2.0, 3)
+        )
+
+        # 4. Generate Updated Versioned Report
+        self._emit("report_start", {"query": clean_prompt})
+        updated_report = self.report_generator.generate_report(merged_aggregated, format_type=format_type)
+        updated_report.title = f"Updated: {original_report.title}"
+
+        self._emit("report_ready", {
+            "report_id": updated_report.report_id,
+            "title": updated_report.title,
+            "markdown_content": updated_report.markdown_content
+        })
+
+        logger.info(f"LarpAgent completed follow-up chat updates successfully.")
+        return updated_report
+
 
 

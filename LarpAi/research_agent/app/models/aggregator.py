@@ -19,3 +19,6 @@ class AggregatedResearchData(BaseModel):
     all_citations: List[CitationItem] = Field(default_factory=list, description="Normalized citation entries.")
     total_sources_count: int = Field(default=0, description="Total count of unique sources processed.")
     average_confidence_score: float = Field(default=0.0, description="Average confidence score across claims.")
+    extracted_tables: List[str] = Field(default_factory=list, description="Markdown data tables parsed from page images / PDF charts.")
+    image_analyses: List[str] = Field(default_factory=list, description="Visual description summaries of charts / graphs.")
+

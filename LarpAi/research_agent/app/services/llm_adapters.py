@@ -1,5 +1,6 @@
 import os
 import json
+import base64
 import logging
 import httpx
 from typing import Type, TypeVar, Optional, Any
@@ -62,6 +63,38 @@ class OpenAIProvider(BaseLLMProvider):
         clean_json = text_out.strip("`").replace("json\n", "", 1).strip()
         return schema.model_validate_json(clean_json)
 
+    async def generate_vision_text(self, image_bytes: bytes, prompt: str) -> str:
+        if not self.api_key:
+            raise ValueError("OpenAI API key is missing. Set OPENAI_API_KEY in environment.")
+
+        base64_image = base64.b64encode(image_bytes).decode("utf-8")
+        payload = {
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}
+                        }
+                    ]
+                }
+            ],
+            "max_tokens": 1024
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(self.endpoint, headers=headers, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            return data["choices"][0]["message"]["content"].strip()
+
 
 class GeminiProvider(BaseLLMProvider):
     """
@@ -112,6 +145,41 @@ class GeminiProvider(BaseLLMProvider):
         clean_json = text_out.strip("`").replace("json\n", "", 1).strip()
         return schema.model_validate_json(clean_json)
 
+    async def generate_vision_text(self, image_bytes: bytes, prompt: str) -> str:
+        if not self.api_key:
+            raise ValueError("Gemini API key is missing. Set GEMINI_API_KEY in environment.")
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+        base64_image = base64.b64encode(image_bytes).decode("utf-8")
+
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": prompt},
+                        {
+                            "inline_data": {
+                                "mime_type": "image/jpeg",
+                                "data": base64_image
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+        headers = {"Content-Type": "application/json"}
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, headers=headers, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            candidates = data.get("candidates", [])
+            if candidates and "content" in candidates[0]:
+                parts = candidates[0]["content"].get("parts", [])
+                if parts:
+                    return parts[0].get("text", "").strip()
+            return ""
+
 
 class AnthropicProvider(BaseLLMProvider):
     """
@@ -152,6 +220,43 @@ class AnthropicProvider(BaseLLMProvider):
         text_out = await self.generate_text(augmented_prompt, system_prompt=system_prompt)
         clean_json = text_out.strip("`").replace("json\n", "", 1).strip()
         return schema.model_validate_json(clean_json)
+
+    async def generate_vision_text(self, image_bytes: bytes, prompt: str) -> str:
+        if not self.api_key:
+            raise ValueError("Anthropic API key is missing. Set ANTHROPIC_API_KEY in environment.")
+
+        headers = {
+            "x-api-key": self.api_key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json"
+        }
+        base64_image = base64.b64encode(image_bytes).decode("utf-8")
+        payload = {
+            "model": self.model,
+            "max_tokens": 1024,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/jpeg",
+                                "data": base64_image
+                            }
+                        },
+                        {"type": "text", "text": prompt}
+                    ]
+                }
+            ]
+        }
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(self.endpoint, headers=headers, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            return data["content"][0]["text"].strip()
 
 
 def get_llm_provider(provider_name: Optional[str] = None) -> BaseLLMProvider:
