@@ -18,6 +18,12 @@ import { BibliographyView } from './components/BibliographyView';
 import { HistoryView } from './components/HistoryView';
 import { SettingsView } from './components/SettingsView';
 import { UpgradeModal } from './components/UpgradeModal';
+import { AuthModal } from './components/AuthModal';
+
+interface AuthUser {
+  email: string;
+  name: string;
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('new');
@@ -28,6 +34,8 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isOpenMobileMenu, setIsOpenMobileMenu] = useState(false);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [defaultMode, setDefaultMode] = useState<ResearchMode>('quick');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   // Live pipeline state — updated via SSE as steps run
@@ -77,11 +85,38 @@ export default function App() {
     showToast('Research thread deleted.');
   };
 
+  const handleLoginSuccess = (user: { email: string; name: string }) => {
+    setAuthUser(user);
+    setIsAuthModalOpen(false);
+    showToast(`Welcome, ${user.name}!`);
+  };
+
+  const handleLogout = () => {
+    setAuthUser(null);
+    localStorage.removeItem('access_token');
+    showToast('Signed out successfully.');
+  };
+
+  const handleProfileClick = () => {
+    if (authUser) {
+      // If logged in, could show a profile dropdown — for now toggle auth modal
+      setIsAuthModalOpen(true);
+    } else {
+      setIsAuthModalOpen(true);
+    }
+  };
+
   const handleSynthesize = async (
     query: string,
     mode: ResearchMode,
     attachedFiles: AttachedFile[]
   ) => {
+    // Gate Deep Research behind authentication
+    if (mode === 'deep' && !authUser) {
+      setIsAuthModalOpen(true);
+      showToast('Please sign in to use Deep Research mode.');
+      return;
+    }
     const newId = `project-${Date.now()}`;
     const newProject: ResearchProject = {
       id: newId,
@@ -441,6 +476,9 @@ export default function App() {
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
           onNewResearchClick={handleNewResearchClick}
+          authUser={authUser}
+          onProfileClick={handleProfileClick}
+          onLogout={handleLogout}
         />
 
         {activeTab === 'new' && (
@@ -499,6 +537,13 @@ export default function App() {
       <UpgradeModal
         isOpen={isUpgradeModalOpen}
         onClose={() => setIsUpgradeModalOpen(false)}
+      />
+
+      {/* Auth Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onLoginSuccess={handleLoginSuccess}
       />
     </div>
   );
