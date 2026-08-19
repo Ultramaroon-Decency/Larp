@@ -67,7 +67,15 @@ PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
 def _is_public(path: str) -> bool:
     """Return True if the path does not require a valid JWT."""
     normalised = path.rstrip("/")
+    
+    # /api/v1/research is only public for the root creation path (anonymous search).
+    # All subpaths (e.g. /cancel, /history, /status) must be authenticated.
+    if normalised == "/api/v1/research":
+        return True
+
     for prefix in PUBLIC_PATH_PREFIXES:
+        if prefix.rstrip("/") == "/api/v1/research":
+            continue
         if normalised == prefix.rstrip("/") or normalised.startswith(prefix.rstrip("/") + "/"):
             return True
     return False
