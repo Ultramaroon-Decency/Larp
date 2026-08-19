@@ -33,15 +33,15 @@ export default function App() {
   // Live pipeline state — updated via SSE as steps run
   const [livePipelineSteps, setLivePipelineSteps] = useState<PipelineStep[]>([]);
   const [livePayments, setLivePayments] = useState<PaymentReceipt[]>([]);
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
 
   const activeProject = projects.find((p) => p.id === activeProjectId) || projects[0] || null;
 
   useEffect(() => {
     return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
       }
     };
   }, []);
@@ -82,9 +82,6 @@ export default function App() {
     mode: ResearchMode,
     attachedFiles: AttachedFile[]
   ) => {
-    // Generate a unique session ID for SSE correlation
-    const sessionId = crypto.randomUUID();
-
     const newId = `project-${Date.now()}`;
     const newProject: ResearchProject = {
       id: newId,
@@ -118,104 +115,185 @@ export default function App() {
     setLivePipelineSteps([]);
     setLivePayments([]);
 
-    // Close any previous SSE connection if one exists
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
     }
 
-    // Open SSE connection BEFORE posting to capture all events
-    const eventSource = new EventSource(`/api/research/stream/${sessionId}`);
-    eventSourceRef.current = eventSource;
-
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-
-        if (data.type === 'step_start' || data.type === 'step_done' || data.type === 'step_error') {
-          setLivePipelineSteps((prev) => {
-            const existing = prev.find((s) => s.id === data.step.id);
-            if (existing) {
-              return prev.map((s) => (s.id === data.step.id ? data.step : s));
-            }
-            return [...prev, data.step];
-          });
-        }
-
-        if (data.type === 'payment' && data.payment) {
-          setLivePayments((prev) => [...prev, data.payment]);
-        }
-
-        if (data.type === 'complete' || data.type === 'pipeline_error') {
-          eventSource.close();
-          if (eventSourceRef.current === eventSource) {
-            eventSourceRef.current = null;
-          }
-        }
-      } catch {
-        // ignore parse errors for ping events
-      }
-    };
-
-    eventSource.onerror = () => {
-      eventSource.close();
-      if (eventSourceRef.current === eventSource) {
-        eventSourceRef.current = null;
-      }
-    };
-
     try {
-      const res = await fetch('/api/research/synthesize', {
+      const token = localStorage.getItem('access_token') || '';
+      
+      const res = await fetch('/api/v1/research/', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, mode, attachedFiles, sessionId })
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ query, depth: mode, title: query })
       });
 
-      if (!res.ok) throw new Error('Failed to reach synthesis API');
+      if (res.status === 401) {
+          showToast('Authentication required for deep research mode.');
+          setIsSynthesizing(false);
+          setProjects((prev) => prev.filter(p => p.id !== newId));
+          return;
+      }
+      
+      if (!res.ok) throw new Error('Failed to start research job');
 
       const data = await res.json();
+      const jobId = data.data?.id;
+      if (!jobId) throw new Error('No Job ID returned');
 
-      setProjects((prev) =>
-        prev.map((p) => {
-          if (p.id !== newId) return p;
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${wsProtocol}//${window.location.host}/api/v1/ws/research/${jobId}${token ? `?token=${token}` : ''}`;
+      
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
 
-          return {
-            ...p,
-            title: data.title || p.title,
-            status: 'completed',
-            pipelineSteps: data.pipelineSteps ?? [],
-            payments: data.payments ?? [],
-            totalCost: data.totalCost ?? '0.0000',
-            messages: [
-              ...p.messages,
-              {
-                id: `msg-${Date.now()}-a`,
-                role: 'assistant',
-                title: data.title,
-                content: data.overview || 'Synthesis complete.',
-                sections: data.sections || [],
-                codeSnippet: data.codeSnippet || '',
-                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      ws.onmessage = async (event) => {
+        try {
+          const wsData = JSON.parse(event.data);
+          
+          if (wsData.event === 'job_progress_updated') {
+            const agentName = wsData.current_agent || 'Unknown';
+            const step: PipelineStep = {
+              id: agentName,
+              name: agentName,
+              status: wsData.status === 'in_progress' ? 'running' : wsData.status === 'completed' ? 'done' : 'error',
+              latency: wsData.execution_time_ms ? `${wsData.execution_time_ms}ms` : undefined,
+            };
+
+            setLivePipelineSteps((prev) => {
+              const agentOrder = ['PlannerAgent', 'SearchAgent', 'FactCheckerAgent', 'CitationAgent', 'ReportAgent'];
+              const currentIndex = agentOrder.indexOf(agentName);
+
+              if (wsData.status === 'completed' || wsData.progress_percentage === 100) {
+                // Mark all accumulated steps as done
+                return prev.map((s) => ({ ...s, status: 'done' as const }));
               }
-            ],
-            sources: (data.sources || []).map((s: Source, idx: number) => ({
-              ...s,
-              id: `src-${newId}-${idx + 1}`
-            }))
-          };
-        })
-      );
+
+              let updated = prev.map((s) => {
+                const stepIndex = agentOrder.indexOf(s.id);
+                if (stepIndex !== -1 && currentIndex !== -1 && stepIndex < currentIndex) {
+                  return { ...s, status: 'done' as const };
+                }
+                if (s.id === step.id) {
+                  return step;
+                }
+                return s;
+              });
+
+              if (!updated.some((s) => s.id === step.id)) {
+                updated.push(step);
+              }
+              return updated;
+            });
+
+            if (wsData.progress_percentage === 100) {
+                ws.close();
+                wsRef.current = null;
+                
+                // Extract report directly from WebSocket event (works for anonymous users)
+                const reportData = wsData.report || {};
+                const sourcesData = wsData.sources || [];
+                
+                // If report is in the WebSocket event, use it directly
+                if (reportData.content_markdown) {
+                    setProjects((prev) =>
+                      prev.map((p) => {
+                        if (p.id !== newId) return p;
+                        return {
+                          ...p,
+                          title: reportData.title || p.title,
+                          status: 'completed',
+                          messages: [
+                            ...p.messages,
+                            {
+                              id: `msg-${Date.now()}-a`,
+                              role: 'assistant',
+                              title: reportData.title,
+                              content: reportData.content_markdown,
+                              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            }
+                          ],
+                          sources: sourcesData.map((s: any, idx: number) => ({
+                            id: `src-${idx}`,
+                            title: s.title,
+                            url: s.url,
+                            snippet: s.snippet,
+                            relevanceScore: s.relevance_score
+                          }))
+                        };
+                      })
+                    );
+                } else if (token) {
+                    // Authenticated users: fallback to GET endpoint  
+                    try {
+                        const reportRes = await fetch(`/api/v1/research/${jobId}`, {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        if (reportRes.ok) {
+                            const finalData = await reportRes.json();
+                            const dbReport = finalData.data?.report || {};
+                            const dbSources = finalData.data?.sources || [];
+                            setProjects((prev) =>
+                              prev.map((p) => {
+                                if (p.id !== newId) return p;
+                                return {
+                                  ...p,
+                                  title: finalData.data?.title || p.title,
+                                  status: 'completed',
+                                  messages: [
+                                    ...p.messages,
+                                    {
+                                      id: `msg-${Date.now()}-a`,
+                                      role: 'assistant',
+                                      title: finalData.data?.title,
+                                      content: dbReport.content_markdown || 'Synthesis complete.',
+                                      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                    }
+                                  ],
+                                  sources: dbSources.map((s: any) => ({
+                                    id: s.id,
+                                    title: s.title,
+                                    url: s.url,
+                                    snippet: s.snippet,
+                                    relevanceScore: s.relevance_score
+                                  }))
+                                };
+                              })
+                            );
+                        }
+                    } catch {
+                        // Silently fail on report fetch
+                    }
+                } else {
+                    // Mark as completed even without report data
+                    setProjects((prev) =>
+                      prev.map((p) => p.id === newId ? { ...p, status: 'completed' } : p)
+                    );
+                }
+                setIsSynthesizing(false);
+            }
+          }
+        } catch {
+          // ignore parse errors
+        }
+      };
+
+      ws.onerror = () => {
+        ws.close();
+        wsRef.current = null;
+        setIsSynthesizing(false);
+      };
+
     } catch (err) {
       console.error('Synthesis error:', err);
-      showToast('Synthesis failed. Check your API key and try again.');
-      eventSource.close();
-      if (eventSourceRef.current === eventSource) {
-        eventSourceRef.current = null;
-      }
+      showToast('Synthesis failed. Please try again.');
       setProjects((prev) =>
         prev.map((p) => (p.id === newId ? { ...p, status: 'failed' } : p))
       );
-    } finally {
       setIsSynthesizing(false);
     }
   };
@@ -242,12 +320,12 @@ export default function App() {
 
     try {
       const combinedQuery = `${activeProject.query} Follow-up parameter: ${refineText}`;
-      const res = await fetch('/api/research/synthesize', {
+      const res = await fetch('/api/v1/research/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           query: combinedQuery,
-          mode: activeProject.mode,
+          depth: activeProject.mode, // FastAPI expects 'depth'
           attachedFiles: activeProject.attachedFiles
         })
       });
@@ -332,7 +410,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#F7F9FB] text-[#191C1E] font-sans antialiased">
+    <div className="flex h-screen overflow-hidden bg-background text-on-background font-body-md text-body-md antialiased selection:bg-primary selection:text-on-primary">
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed top-4 right-4 z-50 bg-[#0F172A] text-white text-[13px] font-medium px-4 py-2.5 rounded-md shadow-xl border border-slate-700 flex items-center gap-2 animate-fade-in-down">

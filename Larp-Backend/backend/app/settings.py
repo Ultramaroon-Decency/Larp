@@ -182,6 +182,13 @@ class Settings(BaseSettings):
         description="Sliding window size in seconds (1 s – 1 hour).",
     )
 
+    # ── AI API Keys ─────────────────────────────────────────────────────
+    groq_api_key: str = Field(default="", description="Groq API key")
+    tavily_api_key: str = Field(default="", description="Tavily API key")
+    gemini_api_key: str = Field(default="", description="Gemini API key")
+    openai_api_key: str = Field(default="", description="OpenAI API key")
+    anthropic_api_key: str = Field(default="", description="Anthropic API key")
+
     # ── Compression ────────────────────────────────────────────────────
     gzip_minimum_size: int = Field(
         default=500,
@@ -202,6 +209,8 @@ class Settings(BaseSettings):
         case_sensitive=False,
         # Freeze the settings object to prevent accidental mutation.
         frozen=True,
+        # Ignore extra fields in the .env file (like groq_api_key) instead of crashing.
+        extra="ignore",
     )
 
     # ── Field-Level Validators ────────────────────────────────────────
