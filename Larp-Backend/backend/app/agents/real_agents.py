@@ -30,6 +30,20 @@ except ImportError as _ie:
     logging.getLogger(__name__).warning(f"LarpAi import failed: {_ie}. Planner will use heuristic fallback.")
     LARPAI_AVAILABLE = False
 
+# ── LarpAgent Full Pipeline Import ───────────────────────────────────────────
+# Attempt to import LarpAgent for the full 7-stage pipeline.
+# If unavailable (missing deps or path issues), LARPAI_FULL_PIPELINE is False
+# and AgentManager will gracefully fall back to the 5-step manual pipeline.
+try:
+    from research_agent.app.agent import LarpAgent
+    LARPAI_FULL_PIPELINE = True
+except ImportError as _fe:
+    logging.getLogger(__name__).warning(
+        f"LarpAgent full pipeline import failed: {_fe}. "
+        "AgentManager will use the 5-step fallback pipeline."
+    )
+    LARPAI_FULL_PIPELINE = False
+
 from app.agents.base import BaseAgentState
 from app.agents.planner import PlanOutput, PlannerAgentInterface
 from app.agents.search import SearchAgentInterface, SearchResultItem
@@ -38,6 +52,152 @@ from app.agents.citation import CitationAgentInterface, CitationItem
 from app.agents.report import FinalReportOutput, ReportAgentInterface
 
 logger = logging.getLogger(__name__)
+
+
+async def run_larpai_pipeline(
+    query: str,
+    job_id=None,
+    on_progress=None,
+) -> "FinalReportOutput":
+    """
+    Runs the full LarpAgent 7-stage pipeline and maps its ResearchReport
+    output to the backend's FinalReportOutput format.
+
+    Stages executed (when all agents are available):
+        1. PlannerAgent          (LLMRouter: gemini-flash / gpt-4o-mini)
+        2. ResearchExecutorAgent (parallel web search + ArxivTool + WikipediaTool)
+        3. ResultAggregatorAgent
+        4. EvaluatorAgent        (self-critique reflexion, 2nd pass if score < 0.70)
+        5. ContradictionDetector
+        6. CriticAgent           (LLMRouter: claude-3.5 / gpt-4o)
+        7. ReportGeneratorAgent
+
+    Args:
+        query:       Research topic or question string.
+        job_id:      Optional UUID — used for WebSocket progress event labels.
+        on_progress: Optional async callable(agent_label: str, pct: float, payload: dict)
+                     that forwards LarpAgent SSE events as job_progress_updated
+                     WebSocket messages. Uses Option A mapping (simpler, no
+                     frontend changes required).
+
+    Returns:
+        FinalReportOutput — compatible with the backend's existing schema.
+
+    Raises:
+        Exception — propagated upward; AgentManager catches and falls back.
+    """
+    if not LARPAI_FULL_PIPELINE:
+        raise ImportError("LarpAgent full pipeline is not available.")
+
+    # ── Event bridge: map LarpAgent on_event → job_progress_updated (Option A) ─
+    # LarpAgent emits fine-grained events (evaluation_start, reflexion_pass_start,
+    # critic_start, etc.). We map these onto the WebSocket's job_progress_updated
+    # shape so the frontend receives meaningful progress percentages without any
+    # frontend code changes.
+    _STAGE_PROGRESS = {
+        "start":                              5.0,
+        "planning_start":                    10.0,
+        "plan_created":                      18.0,
+        "execution_start":                   20.0,
+        "execution_complete":                45.0,
+        "aggregation_start":                 47.0,
+        "aggregation_complete":              52.0,
+        "evaluation_start":                  54.0,
+        "evaluation_complete":               58.0,
+        "reflexion_pass_start":              60.0,
+        "reflexion_pass_complete":           68.0,
+        "contradiction_detection_start":     70.0,
+        "contradiction_detection_complete":  74.0,
+        "critic_start":                      76.0,
+        "critic_complete":                   88.0,
+        "report_start":                      90.0,
+        "report_ready":                      98.0,
+    }
+    _STAGE_LABELS = {
+        "start":                             "LarpAgent",
+        "planning_start":                    "PlannerAgent",
+        "plan_created":                      "PlannerAgent",
+        "execution_start":                   "ResearchExecutor",
+        "execution_complete":                "ResearchExecutor",
+        "aggregation_start":                 "AggregatorAgent",
+        "aggregation_complete":              "AggregatorAgent",
+        "evaluation_start":                  "EvaluatorAgent",
+        "evaluation_complete":               "EvaluatorAgent",
+        "reflexion_pass_start":              "EvaluatorAgent (2nd pass)",
+        "reflexion_pass_complete":           "EvaluatorAgent (2nd pass)",
+        "contradiction_detection_start":     "ContradictionDetector",
+        "contradiction_detection_complete":  "ContradictionDetector",
+        "critic_start":                      "CriticAgent",
+        "critic_complete":                   "CriticAgent",
+        "report_start":                      "ReportGeneratorAgent",
+        "report_ready":                      "ReportGeneratorAgent",
+    }
+
+    def _on_event(event_type: str, payload: dict) -> None:
+        """Sync event bridge — schedules async progress update without blocking."""
+        if on_progress is None:
+            return
+        import asyncio
+        pct = _STAGE_PROGRESS.get(event_type, 50.0)
+        label = _STAGE_LABELS.get(event_type, "LarpAgent")
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(on_progress(label, pct, payload))
+        except Exception:
+            pass  # Never let event bridging crash the pipeline
+
+    agent = LarpAgent(
+        wallet_balance=100.0,
+        on_event=_on_event,
+        enable_reflexion=True,
+        enable_contradiction_detection=True,
+        enable_critic=True,
+    )
+
+    report = await agent.run(query)
+
+    # ── Map ResearchReport → FinalReportOutput ────────────────────────────────
+    # ResearchReport fields:
+    #   report_id, title, markdown_content, confidence_score,
+    #   total_sources, created_at
+    # FinalReportOutput fields:
+    #   title, summary, content_markdown, key_findings, word_count
+    markdown = report.markdown_content or ""
+
+    # Extract a summary: first non-empty non-heading paragraph (up to 300 chars)
+    summary = ""
+    for line in markdown.splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and not stripped.startswith("---"):
+            summary = stripped[:300]
+            if len(stripped) > 300:
+                summary += "..."
+            break
+    if not summary:
+        summary = f"LarpAi full-pipeline report for: {query}"
+
+    # Extract key findings from bullet points in the markdown body
+    key_findings = []
+    for line in markdown.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("- ") and len(stripped) > 5:
+            key_findings.append({"statement": stripped[2:200]})
+        if len(key_findings) >= 8:
+            break
+
+    # Embed confidence score in title for visibility in DB / frontend
+    confidence_pct = int(getattr(report, "confidence_score", 0.85) * 100)
+    title = f"{report.title} [Confidence: {confidence_pct}%]"
+
+    return FinalReportOutput(
+        title=title,
+        summary=summary,
+        content_markdown=markdown,
+        key_findings=key_findings,
+        word_count=len(markdown.split()),
+    )
+
 
 class RealPlannerAgent(PlannerAgentInterface):
     """Real implementation of PlannerAgentInterface using LarpAi, with heuristic fallback."""
