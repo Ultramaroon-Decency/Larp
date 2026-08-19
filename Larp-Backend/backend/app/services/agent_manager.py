@@ -8,13 +8,11 @@ from uuid import UUID
 from app.agents.citation import CitationAgentInterface, CitationItem
 from app.agents.fact_checker import FactCheckerAgentInterface, VerifiedFact
 from app.agents.real_agents import (
-    LARPAI_FULL_PIPELINE,
     RealCitationAgent,
     RealFactCheckerAgent,
     RealPlannerAgent,
     RealReportAgent,
     RealSearchAgent,
-    run_larpai_pipeline,
 )
 from app.agents.planner import PlanOutput, PlannerAgentInterface
 from app.agents.report import FinalReportOutput, ReportAgentInterface
@@ -208,18 +206,7 @@ class AgentManager:
     async def run_pipeline(
         self, job_id: UUID, user_id: UUID, query: str, depth: str = "standard"
     ) -> FinalReportOutput:
-        """Execute multi-agent pipeline recording Execution Time, Cost, Errors, and Status logs per step.
-
-        PRIMARY PATH  — LarpAgent full 7-stage pipeline:
-            1. PlannerAgent          (LLMRouter: gemini-flash / gpt-4o-mini)
-            2. ResearchExecutorAgent (parallel web search + ArxivTool + WikipediaTool)
-            3. ResultAggregatorAgent
-            4. EvaluatorAgent        (reflexion quality gate, 2nd pass if score < 0.70)
-            5. ContradictionDetector
-            6. CriticAgent           (adversarial peer review)
-            7. ReportGeneratorAgent
-        FALLBACK PATH — original 5-step manual pipeline (if LarpAgent unavailable).
-        """
+        """Execute multi-agent pipeline recording Execution Time, Cost, Errors, and Status logs per step."""
         start_time = time.perf_counter()
         logger.info(
             "AgentManager: Starting resilient research pipeline with execution logging",
@@ -227,99 +214,7 @@ class AgentManager:
             user_id=str(user_id),
         )
 
-        # ── PRIMARY PATH: Full LarpAgent Pipeline ─────────────────────────────
-        if LARPAI_FULL_PIPELINE:
-            try:
-                logger.info(
-                    "AgentManager: LarpAgent full pipeline available — routing to 7-stage LarpAi pipeline",
-                    job_id=str(job_id),
-                )
-
-                # Build an async progress callback that forwards LarpAgent SSE
-                # events as job_progress_updated WebSocket messages (Option A).
-                async def _on_progress(agent_label: str, pct: float, payload: dict) -> None:
-                    await self._update_job_progress(
-                        job_id, "in_progress", agent_label, pct, start_time
-                    )
-
-                await self._update_job_progress(
-                    job_id, "in_progress", "LarpAgent", 5.0, start_time
-                )
-
-                larp_start = time.perf_counter()
-                final_report = await run_larpai_pipeline(
-                    query=query,
-                    job_id=job_id,
-                    on_progress=_on_progress,
-                )
-                larp_ms = int((time.perf_counter() - larp_start) * 1000)
-
-                # Log as a single consolidated step (steps 1-7 are internal to LarpAgent)
-                await self._log_step(
-                    job_id, "LarpAgent", 1, "completed", larp_ms, cost_usd=0.0065,
-                    input_data={"query": query, "depth": depth, "pipeline": "larpai_full"},
-                    output_data={"word_count": final_report.word_count,
-                                 "key_findings_count": len(final_report.key_findings)},
-                )
-
-                if self.report_repo:
-                    try:
-                        await self.report_repo.create(
-                            {
-                                "job_id": job_id,
-                                "user_id": user_id,
-                                "title": final_report.title,
-                                "summary": final_report.summary,
-                                "content_markdown": final_report.content_markdown,
-                                "key_findings": final_report.key_findings,
-                                "word_count": final_report.word_count,
-                            }
-                        )
-                    except Exception:
-                        pass
-
-                elapsed_ms = int((time.perf_counter() - start_time) * 1000)
-                report_payload = {
-                    "title": final_report.title,
-                    "summary": final_report.summary,
-                    "content_markdown": final_report.content_markdown,
-                    "key_findings": final_report.key_findings,
-                    "word_count": final_report.word_count,
-                }
-                await self._update_job_progress(
-                    job_id, "completed", "LarpAgent", 100.0, start_time,
-                    elapsed_ms=elapsed_ms,
-                    report_data=report_payload,
-                )
-                logger.info(
-                    "AgentManager: LarpAgent full pipeline completed successfully",
-                    job_id=str(job_id),
-                    elapsed_ms=elapsed_ms,
-                    pipeline="larpai_full",
-                )
-                return final_report
-
-            except Exception as larp_exc:
-                logger.warning(
-                    "AgentManager: LarpAgent full pipeline failed — degrading to 5-step fallback",
-                    job_id=str(job_id),
-                    error=str(larp_exc),
-                )
-                await self._log_step(
-                    job_id, "LarpAgent", 1, "failed",
-                    int((time.perf_counter() - start_time) * 1000),
-                    cost_usd=0.0,
-                    error_message=f"{larp_exc.__class__.__name__}: {str(larp_exc)}",
-                )
-                # Fall through to the 5-step manual pipeline below
-
-        # ── FALLBACK PATH: 5-Step Manual Pipeline ─────────────────────────────
-        logger.info(
-            "AgentManager: Running 5-step fallback pipeline",
-            job_id=str(job_id),
-        )
         try:
-
             # ── Step 1: Planner Agent ─────────────────────────────────
             step1_start = time.perf_counter()
             await self._update_job_progress(job_id, "in_progress", "PlannerAgent", 15.0, start_time)
