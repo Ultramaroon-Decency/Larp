@@ -25,6 +25,10 @@ def event_loop():
     loop.close()
 
 
+
+
+
+
 @pytest.fixture(scope="session")
 async def engine():
     """Create async SQLite engine and initialize tables."""
@@ -50,12 +54,16 @@ async def db_session(engine):
 @pytest.fixture
 async def client(db_session):
     """Yield httpx AsyncClient with FastAPI test app."""
+    from unittest.mock import AsyncMock
+    from app.dependencies import get_db, get_redis_client
+
     async def override_get_db():
         yield db_session
 
-    from app.dependencies import get_db
+    mock_redis = AsyncMock()
     app.dependency_overrides[get_async_session] = override_get_db
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_redis_client] = lambda: mock_redis
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -66,8 +74,14 @@ async def client(db_session):
 
 
 @pytest.fixture
-def auth_headers():
-    """Return dictionary with Authorization bearer token for a test user."""
-    test_user_id = str(uuid.uuid4())
-    token = create_access_token(subject=test_user_id)
+async def auth_headers(db_session):
+    """Return dictionary with Authorization bearer token for an active test user."""
+    from app.repositories.user_repository import UserRepository
+    user_repo = UserRepository(db_session)
+    user = await user_repo.create({
+        "email": f"test_{uuid.uuid4()}@example.com",
+        "is_active": True,
+    })
+    token = create_access_token(subject=str(user.id))
     return {"Authorization": f"Bearer {token}"}
+

@@ -10,7 +10,13 @@ class RegisterRequest(BaseModel):
 
     email: EmailStr = Field(description="User email address")
     password: str = Field(min_length=8, max_length=128, description="Plaintext password (min 8 chars)")
-    full_name: str | None = Field(default=None, max_length=255, description="Optional full name")
+    name: str | None = Field(default=None, max_length=255, description="Optional display name")
+    full_name: str | None = Field(default=None, max_length=255, description="Optional display name")
+
+    @property
+    def display_name(self) -> str | None:
+        return self.name or self.full_name
+
 
 
 class LoginRequest(BaseModel):
@@ -35,6 +41,12 @@ class TokenResponse(BaseModel):
     expires_in: int = Field(description="Access token lifetime in seconds")
 
 
+class GoogleLoginRequest(BaseModel):
+    """Google login request payload."""
+
+    credential: str = Field(description="Google ID token credential issued by GIS")
+
+
 class UserResponse(BaseModel):
     """User profile summary schema."""
 
@@ -43,10 +55,13 @@ class UserResponse(BaseModel):
     id: uuid.UUID
     email: EmailStr
     full_name: str | None = None
+    name: str | None = None
+    avatar_url: str | None = None
     role: str = "user"
     is_active: bool
     is_superuser: bool
     created_at: datetime
+    last_login_at: datetime | None = None
 
 
 class TokenPayload(BaseModel):

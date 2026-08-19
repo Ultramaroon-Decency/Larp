@@ -4,13 +4,13 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+import bcrypt
+
 
 from app.config import get_settings
 from app.core.exceptions import AuthenticationError
 from app.schemas.auth import TokenPayload
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def create_access_token(subject: str, expires_delta: timedelta | None = None) -> str:
@@ -119,9 +119,63 @@ def decode_refresh_token(token: str) -> TokenPayload:
 
 def hash_password(password: str) -> str:
     """Hash a plaintext password using bcrypt."""
-    return pwd_context.hash(password)
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
+def verify_password(plain_password: str, hashed_password: str | None) -> bool:
     """Verify a plaintext password against a bcrypt hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    if not plain_password or not hashed_password:
+        return False
+    try:
+        return bcrypt.checkpw(
+            plain_password.encode("utf-8"),
+            hashed_password.encode("utf-8"),
+        )
+    except Exception:
+        return False
+
+
+def verify_google_token(credential: str, audience_client_id: str | None = None) -> dict:
+    """Verify a Google ID token server-side and return validated claims.
+
+    Validates signature, expiration, issuer, and audience against Google endpoints.
+    """
+    from google.auth.transport import requests as google_requests
+    from google.oauth2 import id_token
+
+    if not credential:
+        raise AuthenticationError(
+            message="Missing Google ID token credential",
+            error_code="AUTH_GOOGLE_TOKEN_MISSING",
+        )
+
+    try:
+        id_info = id_token.verify_oauth2_token(
+            credential,
+            google_requests.Request(),
+            audience_client_id if audience_client_id else None,
+        )
+    except Exception as exc:
+        raise AuthenticationError(
+            message=f"Invalid Google ID token: {str(exc)}",
+            error_code="AUTH_GOOGLE_TOKEN_INVALID",
+        )
+
+    issuer = id_info.get("iss", "")
+    if issuer not in ("accounts.google.com", "https://accounts.google.com"):
+        raise AuthenticationError(
+            message=f"Invalid token issuer: {issuer}",
+            error_code="AUTH_GOOGLE_INVALID_ISSUER",
+        )
+
+    google_sub = id_info.get("sub")
+    email = id_info.get("email")
+    if not google_sub or not email:
+        raise AuthenticationError(
+            message="Google token missing required identity claims",
+            error_code="AUTH_GOOGLE_CLAIMS_MISSING",
+        )
+
+    return id_info
+

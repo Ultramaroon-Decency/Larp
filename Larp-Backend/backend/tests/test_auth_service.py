@@ -38,12 +38,16 @@ async def test_register_success(mock_hash, auth_service, mock_user_repo):
     mock_user.id = uuid4()
     mock_user.email = "test@example.com"
     mock_user.full_name = "Test User"
+    mock_user.name = "Test User"
+    mock_user.avatar_url = None
+    mock_user.last_login_at = None
     mock_user.role = "user"
     mock_user.is_active = True
     mock_user.is_superuser = False
     mock_user.created_at = datetime.now(timezone.utc)
     mock_user.updated_at = datetime.now(timezone.utc)
     mock_user_repo.create.return_value = mock_user
+
 
     req = RegisterRequest(email="test@example.com", password="password123", full_name="Test User")
     response = await auth_service.register(req)
@@ -90,3 +94,40 @@ async def test_login_success(mock_verify, auth_service, mock_user_repo, mock_red
     assert tokens.refresh_token is not None
     assert tokens.token_type == "bearer"
     mock_redis.setex.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_registration_normalizes_email(auth_service, mock_user_repo):
+    """Email normalization converts uppercase input email to lowercase."""
+    mock_user_repo.email_exists.return_value = False
+    mock_user = MagicMock()
+    mock_user.id = uuid4()
+    mock_user.email = "uppercase@example.com"
+    mock_user.full_name = "Uppercase User"
+    mock_user.name = "Uppercase User"
+    mock_user.avatar_url = None
+    mock_user.last_login_at = None
+    mock_user.role = "user"
+    mock_user.is_active = True
+    mock_user.is_superuser = False
+    mock_user.created_at = datetime.now(timezone.utc)
+    mock_user_repo.create.return_value = mock_user
+
+    req = RegisterRequest(email="UPPERCASE@EXAMPLE.COM", password="password123", name="Uppercase User")
+    response = await auth_service.register(req)
+
+    mock_user_repo.email_exists.assert_called_once_with("uppercase@example.com")
+
+
+@pytest.mark.asyncio
+async def test_password_stored_as_secure_hash(db_session):
+    """Plaintext password is never stored; hashed_password is a bcrypt hash."""
+    from app.core.security import hash_password, verify_password
+    plain_pw = "supersecretpassword123"
+    hashed = hash_password(plain_pw)
+
+    assert hashed != plain_pw
+    assert hashed.startswith("$2b$")
+    assert verify_password(plain_pw, hashed) is True
+    assert verify_password("wrongpassword", hashed) is False
+
