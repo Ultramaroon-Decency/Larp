@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse
 from app.dependencies import (
     get_agent_manager,
     get_current_user,
+    get_optional_user,
     get_report_service,
     get_research_service,
 )
@@ -44,15 +45,64 @@ router = APIRouter()
 async def create_research_job(
     body: ResearchJobCreate,
     background_tasks: BackgroundTasks,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict | None = Depends(get_optional_user),
     research_service: ResearchService = Depends(get_research_service),
     agent_manager: AgentManager = Depends(get_agent_manager),
 ) -> ResponseEnvelope[ResearchJobRead]:
-    """Create a new multi-step research job and dispatch AgentManager pipeline asynchronously."""
-    user_id = UUID(current_user["id"])
+    """Create a new multi-step research job. Quick search is anonymous; deep search requires auth."""
+    
+    import uuid
+    from fastapi import HTTPException
+
+    # Conditional Auth: Enforce login for deep mode
+    if body.depth == "deep" and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Deep research mode requires authentication.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # If anonymous (Quick mode), bypass database and run purely in memory
+    if not current_user:
+        job_id = uuid.uuid4()
+        user_id = uuid.uuid4() # Fake user ID
+        
+        # Create an ephemeral agent manager with no repositories
+        ephemeral_agent_manager = AgentManager(
+            job_repo=None, report_repo=None, source_repo=None, agent_log_repo=None
+        )
+        
+        background_tasks.add_task(
+            ephemeral_agent_manager.run_pipeline,
+            job_id=job_id,
+            user_id=user_id,
+            query=body.query,
+            depth=body.depth,
+        )
+
+        from datetime import datetime
+        now = datetime.utcnow()
+        return ResponseEnvelope(
+            success=True,
+            message="Anonymous quick research started.",
+            data=ResearchJobRead(
+                id=job_id,
+                user_id=user_id,
+                title=f"Quick Search: {body.query[:30]}",
+                query=body.query,
+                status="pending",
+                depth=body.depth,
+                progress_percentage=0.0,
+                created_at=now,
+                updated_at=now,
+            ),
+        )
+
+    # Authenticated flow: Saved to DB
+    user_id = uuid.UUID(current_user["id"])
     job = await research_service.create_job(user_id=user_id, data=body)
 
-    # Dispatch AgentManager pipeline in background (Planner -> Search -> FactChecker -> Citation -> Report)
+    # Dispatch AgentManager pipeline in background
     background_tasks.add_task(
         agent_manager.run_pipeline,
         job_id=job.id,

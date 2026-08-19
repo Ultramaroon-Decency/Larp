@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { ResearchProject, PipelineStep, PaymentReceipt } from '../types';
 import { SourcesPanel } from './SourcesPanel';
 
@@ -53,7 +55,47 @@ export const ChatResearchView: React.FC<ChatResearchViewProps> = ({
     setIsSourcesMobileOpen(true);
   };
 
-  // Helper to render text with interactive citation badges [1], [2], [3]
+  // Helper to process markdown text before rendering
+  const preprocessMarkdown = (text: string) => {
+    // Replace [1] with a markdown link to cite:1, ignoring those already in links or preceded by "Source "
+    return text.replace(/(?<!\[Source\s*)\[(\d+)\](?!\()/g, '[$1](cite:$1)');
+  };
+
+  const MarkdownComponents = {
+    a: ({ href, children, ...props }: any) => {
+      if (href?.startsWith('cite:')) {
+        const citeIndex = parseInt(href.replace('cite:', ''), 10);
+        const isHighlighted = highlightedSourceIndex === citeIndex;
+        return (
+          <span
+            onClick={() => handleCitationClick(citeIndex)}
+            onMouseEnter={() => setHighlightedSourceIndex(citeIndex)}
+            onMouseLeave={() => setHighlightedSourceIndex(null)}
+            className={`inline-flex items-center justify-center rounded px-1.5 py-0.5 mx-1 font-mono text-[12px] font-bold border transition-colors cursor-pointer ${
+              isHighlighted
+                ? 'bg-[#0F172A] text-white border-[#0F172A]'
+                : 'bg-[#EFF6FF] text-[#0F172A] border-[#C6C6CD] hover:bg-[#D5E3FD]'
+            }`}
+            title={`Citation [${citeIndex}] - Click to view source card`}
+          >
+            [{citeIndex}]
+          </span>
+        );
+      }
+      return <a href={href} className="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer" {...props}>{children}</a>;
+    },
+    h1: ({ children }: any) => <h1 className="text-[26px] font-bold text-[#0F172A] mt-6 mb-4 leading-tight">{children}</h1>,
+    h2: ({ children }: any) => <h2 className="text-[22px] font-bold text-[#0F172A] mt-6 mb-3 leading-tight">{children}</h2>,
+    h3: ({ children }: any) => <h3 className="text-[18px] font-bold text-[#0F172A] mt-4 mb-2 leading-snug">{children}</h3>,
+    p: ({ children }: any) => <p className="mb-4 text-[17px] leading-[26px] text-[#191C1E]">{children}</p>,
+    ul: ({ children }: any) => <ul className="list-disc pl-6 mb-4 space-y-2 text-[17px] leading-[26px] text-[#191C1E]">{children}</ul>,
+    ol: ({ children }: any) => <ol className="list-decimal pl-6 mb-4 space-y-2 text-[17px] leading-[26px] text-[#191C1E]">{children}</ol>,
+    li: ({ children }: any) => <li>{children}</li>,
+    strong: ({ children }: any) => <strong className="font-bold text-[#0F172A]">{children}</strong>,
+    blockquote: ({ children }: any) => <blockquote className="border-l-4 border-[#C6C6CD] pl-4 italic text-[#45464D] my-4">{children}</blockquote>,
+  };
+
+  // Keep this for the older sections rendering
   const renderTextWithCitations = (text: string) => {
     const parts = text.split(/(\[\d+\])/g);
     return parts.map((part, i) => {
@@ -254,8 +296,13 @@ export const ChatResearchView: React.FC<ChatResearchViewProps> = ({
                 )}
 
                 {/* Overview / Body Text */}
-                <div className="text-[17px] leading-[26px] text-[#191C1E] mb-2 font-sans space-y-4">
-                  <p>{renderTextWithCitations(msg.content)}</p>
+                <div className="font-sans">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={MarkdownComponents}
+                  >
+                    {preprocessMarkdown(msg.content)}
+                  </ReactMarkdown>
                 </div>
 
                 {/* Sections */}

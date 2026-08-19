@@ -7,12 +7,12 @@ from uuid import UUID
 
 from app.agents.citation import CitationAgentInterface, CitationItem
 from app.agents.fact_checker import FactCheckerAgentInterface, VerifiedFact
-from app.agents.mock_agents import (
-    MockCitationAgent,
-    MockFactCheckerAgent,
-    MockPlannerAgent,
-    MockReportAgent,
-    MockSearchAgent,
+from app.agents.real_agents import (
+    RealCitationAgent,
+    RealFactCheckerAgent,
+    RealPlannerAgent,
+    RealReportAgent,
+    RealSearchAgent,
 )
 from app.agents.planner import PlanOutput, PlannerAgentInterface
 from app.agents.report import FinalReportOutput, ReportAgentInterface
@@ -59,12 +59,12 @@ class AgentManager:
         self.max_retries = max_retries
         self.timeout_seconds = timeout_seconds
 
-        # Wire agents or default to mock agents
-        self.planner_agent = planner_agent or MockPlannerAgent()
-        self.search_agent = search_agent or MockSearchAgent()
-        self.fact_checker_agent = fact_checker_agent or MockFactCheckerAgent()
-        self.citation_agent = citation_agent or MockCitationAgent()
-        self.report_agent = report_agent or MockReportAgent()
+        # Wire agents or default to real AI agents
+        self.planner_agent = planner_agent or RealPlannerAgent()
+        self.search_agent = search_agent or RealSearchAgent()
+        self.fact_checker_agent = fact_checker_agent or RealFactCheckerAgent()
+        self.citation_agent = citation_agent or RealCitationAgent()
+        self.report_agent = report_agent or RealReportAgent()
 
     # ── Step 1: Call Planner ───────────────────────────────────────────
     async def call_planner(self, query: str, depth: str) -> PlanOutput:
@@ -197,7 +197,7 @@ class AgentManager:
             facts,
             citations,
             max_retries=self.max_retries,
-            timeout_seconds=self.timeout_seconds,
+            timeout_seconds=240.0,  # 120b model needs ~2-3 min, plus fallback time
             agent_name="ReportAgent",
             fallback_factory=fallback_report,
         )
@@ -304,8 +304,24 @@ class AgentManager:
                     pass
 
             elapsed_ms = int((time.perf_counter() - start_time) * 1000)
+
+            # Include report + sources in the WebSocket event so anonymous users
+            # (who have no DB persistence) receive the full report inline.
+            report_payload = {
+                "title": final_report.title,
+                "summary": final_report.summary,
+                "content_markdown": final_report.content_markdown,
+                "key_findings": final_report.key_findings,
+                "word_count": final_report.word_count,
+            }
+            sources_payload = [
+                {"url": s.url, "title": s.title, "snippet": s.snippet, "relevance_score": s.relevance_score}
+                for s in raw_sources
+            ]
+
             await self._update_job_progress(
-                job_id, "completed", "ReportAgent", 100.0, start_time, elapsed_ms=elapsed_ms
+                job_id, "completed", "ReportAgent", 100.0, start_time, elapsed_ms=elapsed_ms,
+                report_data=report_payload, sources_data=sources_payload,
             )
 
             logger.info(
@@ -392,6 +408,8 @@ class AgentManager:
         start_time: float,
         error_message: Optional[str] = None,
         elapsed_ms: Optional[int] = None,
+        report_data: Optional[dict] = None,
+        sources_data: Optional[list] = None,
     ) -> None:
         """Update job progress in database and broadcast over WebSockets & Redis PubSub."""
         if elapsed_ms is None:
@@ -425,6 +443,10 @@ class AgentManager:
                 "execution_time_ms": elapsed_ms,
                 "error_message": error_message,
             }
+            if report_data:
+                event_payload["report"] = report_data
+            if sources_data:
+                event_payload["sources"] = sources_data
             await manager.broadcast_to_job(job_id, event_payload)
 
             redis = await get_redis()

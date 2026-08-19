@@ -21,7 +21,7 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
   const [filterTag, setFilterTag] = useState<string | null>(null);
 
   const filteredSources = filterTag
-    ? sources.filter((s) => s.tags.includes(filterTag))
+    ? sources.filter((s) => s.tags?.includes(filterTag))
     : sources;
 
   const handleBibliographyClick = () => {
@@ -125,7 +125,7 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
 
               {/* Tags & Action links */}
               <div className="mt-2 flex flex-wrap gap-1.5 items-center">
-                {source.tags.map((tag) => (
+                {(source.tags || []).map((tag) => (
                   <span
                     key={tag}
                     onClick={(e) => {

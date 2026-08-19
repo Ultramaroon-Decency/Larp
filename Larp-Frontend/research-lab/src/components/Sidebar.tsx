@@ -38,17 +38,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <div className="flex flex-col h-full p-4">
       {/* Header */}
       <div className="mb-8 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-[#0F172A] flex items-center justify-center text-white shrink-0 shadow-sm">
+        <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-on-primary font-headline-md">
           <span className="material-symbols-outlined text-[20px]">science</span>
         </div>
         <div>
-          <h1 className="font-bold text-[20px] leading-tight text-[#0F172A] dark:text-white">Research Lab</h1>
-          <p className="text-[11px] font-bold tracking-wider text-[#45464D] uppercase">Academic Utility</p>
+          <h1 className="font-headline-md text-headline-md font-bold text-primary dark:text-primary-fixed leading-tight">Research Lab</h1>
+          <p className="font-label-caps text-label-caps text-on-surface-variant uppercase">Academic Utility</p>
         </div>
       </div>
 
       {/* Navigation Links */}
-      <nav className="flex-1 flex flex-col gap-1.5">
+      <nav className="flex-1 flex flex-col gap-1">
         {navItems.map((item) => {
           const isActive =
             item.id === 'new'
@@ -61,32 +61,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               key={item.id}
               onClick={() => handleTabClick(item.id)}
-              className={`flex items-center gap-3 px-3.5 py-2.5 rounded-md text-[15px] transition-colors duration-200 text-left w-full outline-none focus:ring-2 focus:ring-[#0F172A] ${
+              className={`flex items-center gap-3 px-3 py-2 rounded-DEFAULT transition-colors duration-200 text-left w-full outline-none focus:ring-2 focus:ring-primary ${
                 isActive
-                  ? 'bg-[#E0E3E5] font-bold text-[#0F172A] border-r-2 border-[#0F172A]'
-                  : 'text-[#45464D] hover:bg-[#E0E3E5]/60 hover:text-[#0F172A]'
-              }`}
+                  ? 'text-primary dark:text-primary-fixed font-bold border-r-2 border-primary dark:border-primary-fixed bg-surface-variant/50'
+                  : 'text-on-surface-variant dark:text-on-primary-container hover:bg-surface-variant dark:hover:bg-on-primary-fixed-variant'
+              } ${item.id === 'settings' ? 'mt-auto' : ''}`}
             >
               <span
-                className={`material-symbols-outlined shrink-0 text-[20px] ${
+                className={`material-symbols-outlined text-[20px] ${
                   item.fillIcon || (isActive && item.id !== 'history') ? 'fill-1' : ''
                 }`}
               >
                 {item.icon}
               </span>
-              <span className="truncate">{item.label}</span>
+              <span className="font-body-md text-body-md truncate">{item.label}</span>
             </button>
           );
         })}
       </nav>
 
       {/* Footer CTA */}
-      <div className="mt-auto pt-4 border-t border-[#C6C6CD]/50">
+      <div className="mt-4 pt-4 border-t border-outline-variant">
         <button
           onClick={onUpgradeClick}
-          className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-md bg-[#0F172A] text-white hover:bg-slate-800 transition-colors font-medium text-[13px] tracking-wide uppercase border border-[#0F172A] shadow-sm cursor-pointer"
+          className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-DEFAULT bg-primary text-on-primary hover:bg-slate-800 transition-colors font-body-md font-medium border border-primary cursor-pointer"
         >
-          <span className="material-symbols-outlined text-[18px]">bolt</span>
+          <span className="material-symbols-outlined text-[18px]">upgrade</span>
           Upgrade Plan
         </button>
       </div>
@@ -96,7 +96,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <>
       {/* Desktop Sidebar Rail */}
-      <aside className="w-[280px] h-screen sticky left-0 top-0 bg-[#F2F4F6] border-r border-[#C6C6CD] hidden md:flex flex-col shrink-0 z-20">
+      <aside className="bg-surface-container-low dark:bg-primary-container w-sidebar-width h-screen sticky left-0 top-0 border-r border-outline-variant dark:border-outline hidden md:flex flex-col shrink-0 z-20">
         {content}
       </aside>
 
@@ -107,10 +107,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             className="fixed inset-0 bg-black/40 backdrop-blur-xs"
             onClick={() => setIsOpenMobile(false)}
           />
-          <aside className="relative w-[280px] max-w-[80vw] h-full bg-[#F2F4F6] border-r border-[#C6C6CD] flex flex-col z-10 shadow-2xl">
+          <aside className="relative w-sidebar-width max-w-[80vw] h-full bg-surface-container-low border-r border-outline-variant flex flex-col z-10 shadow-2xl">
             <button
               onClick={() => setIsOpenMobile(false)}
-              className="absolute top-4 right-4 p-1 text-[#45464D] hover:text-[#0F172A] rounded-full hover:bg-black/5"
+              className="absolute top-4 right-4 p-1 text-on-surface-variant hover:text-primary rounded-full hover:bg-black/5"
             >
               <span className="material-symbols-outlined">close</span>
             </button>

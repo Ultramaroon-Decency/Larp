@@ -215,6 +215,14 @@ async def get_current_user(
     return user
 
 
+async def get_optional_user(
+    request: Request,
+    token: str = Depends(OAuth2PasswordBearer(tokenUrl="api/v1/auth/login", auto_error=False)),
+) -> dict | None:
+    """Return the authenticated user if token is valid, otherwise return None."""
+    return getattr(request.state, "user", None)
+
+
 async def get_current_active_user(
     current_user: dict = Depends(get_current_user),
     user_repo: UserRepository = Depends(get_user_repository),
