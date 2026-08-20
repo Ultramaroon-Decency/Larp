@@ -155,6 +155,7 @@ def verify_google_token(credential: str, audience_client_id: str | None = None) 
             credential,
             google_requests.Request(),
             audience_client_id if audience_client_id else None,
+            clock_skew_in_seconds=10,
         )
     except Exception as exc:
         raise AuthenticationError(

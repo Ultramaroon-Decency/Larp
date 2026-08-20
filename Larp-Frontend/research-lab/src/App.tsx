@@ -91,9 +91,22 @@ export default function App() {
     showToast(`Welcome, ${user.name}!`);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (refreshToken) {
+      try {
+        await fetch('/api/v1/auth/logout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+      } catch {
+        // Logout should succeed client-side even if server call fails
+      }
+    }
     setAuthUser(null);
     localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
     showToast('Signed out successfully.');
   };
 

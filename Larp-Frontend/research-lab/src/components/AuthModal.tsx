@@ -39,6 +39,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
       if (tokenData.access_token) {
         localStorage.setItem('access_token', tokenData.access_token);
       }
+      if (tokenData.refresh_token) {
+        localStorage.setItem('refresh_token', tokenData.refresh_token);
+      }
       const meRes = await fetch('/api/v1/auth/me', {
         headers: { Authorization: `Bearer ${tokenData.access_token}` },
       });
@@ -85,6 +88,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
         if (tokenData.access_token) {
           localStorage.setItem('access_token', tokenData.access_token);
         }
+        if (tokenData.refresh_token) {
+          localStorage.setItem('refresh_token', tokenData.refresh_token);
+        }
       }
       onLoginSuccess({ email, name: name || email.split('@')[0] });
       resetForm();
@@ -95,36 +101,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
     }
   };
 
-  const handleOAuthClick = async (provider: string) => {
-    if (provider !== 'google') {
-      setError(`${provider} login is not supported. Please use Google Sign-In or Email.`);
-      return;
-    }
+  const handleGoogleCredentialResponse = async (response: GoogleCredentialResponse) => {
     setError('');
     setIsLoading(true);
-
-    // Prompt user for Google ID token or prompt input
-    const credential = prompt('Enter your Google ID Token to authenticate with Google:');
-    if (!credential) {
-      setIsLoading(false);
-      return;
-    }
-
     try {
       const res = await fetch('/api/v1/auth/google', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ credential }),
+        body: JSON.stringify({ credential: response.credential }),
       });
       const json = await res.json();
       if (!res.ok) {
-        setError(json.message || json.detail || 'Google ID Token verification failed.');
+        setError(json.message || json.detail || 'Google authentication failed.');
         setIsLoading(false);
         return;
       }
       const tokenData = json.data || json;
       if (tokenData.access_token) {
         localStorage.setItem('access_token', tokenData.access_token);
+      }
+      if (tokenData.refresh_token) {
+        localStorage.setItem('refresh_token', tokenData.refresh_token);
       }
       const meRes = await fetch('/api/v1/auth/me', {
         headers: { Authorization: `Bearer ${tokenData.access_token}` },
@@ -134,13 +131,60 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
         const userObj = meJson.data || meJson;
         onLoginSuccess({ email: userObj.email, name: userObj.name || userObj.full_name || 'Google User' });
       } else {
-        onLoginSuccess({ email: `user@${provider}.com`, name: 'Google User' });
+        onLoginSuccess({ email: 'user@google.com', name: 'Google User' });
       }
       resetForm();
     } catch (err: any) {
-      setError('Google authentication failed.');
+      setError('Google authentication failed. Please try again.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleOAuthClick = async (provider: string) => {
+    if (provider !== 'google') {
+      setError(`${provider} login is not yet supported. Please use Google Sign-In or Email.`);
+      return;
+    }
+    setError('');
+
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      setError('Google Sign-In is not configured. Please set VITE_GOOGLE_CLIENT_ID.');
+      return;
+    }
+
+    if (!window.google?.accounts?.id) {
+      setError('Google Sign-In SDK is still loading. Please try again in a moment.');
+      return;
+    }
+
+    try {
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: handleGoogleCredentialResponse,
+        auto_select: false,
+        cancel_on_tap_outside: true,
+        context: 'signin',
+        ux_mode: 'popup',
+      });
+      window.google.accounts.id.prompt((notification: any) => {
+        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+          // Fallback: render a button if One Tap is blocked (e.g. by browser settings)
+          const btnContainer = document.getElementById('google-signin-btn');
+          if (btnContainer) {
+            window.google!.accounts.id.renderButton(btnContainer, {
+              theme: 'outline',
+              size: 'large',
+              width: '100%',
+              text: 'signin_with',
+              shape: 'rectangular',
+            });
+          }
+        }
+      });
+    } catch (err) {
+      setError('Failed to initialize Google Sign-In. Please try again.');
     }
   };
 
@@ -204,6 +248,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
               </svg>
               Continue with Google
             </button>
+            {/* Fallback container for Google GIS rendered button when One Tap is blocked */}
+            <div id="google-signin-btn" className="w-full" />
 
             <button
               onClick={() => handleOAuthClick('github')}

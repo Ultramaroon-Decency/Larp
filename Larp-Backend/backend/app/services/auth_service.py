@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from uuid import UUID
 from redis.asyncio import Redis
 
@@ -89,7 +89,7 @@ class AuthService:
             )
 
         # Update last_login_at timestamp
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
         await self.user_repo.update(user.id, {"last_login_at": now})
 
         # Issue tokens
@@ -179,7 +179,7 @@ class AuthService:
         name = id_info.get("name")
         picture = id_info.get("picture")
 
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
         user = await self.user_repo.find_user_by_google_id(google_sub)
 
         if user is not None:

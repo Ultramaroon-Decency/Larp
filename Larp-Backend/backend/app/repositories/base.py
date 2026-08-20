@@ -189,7 +189,7 @@ class BaseRepository(Generic[ModelType]):
             ) from exc
         except SQLAlchemyError as exc:
             await self.session.rollback()
-            raise DatabaseError(f"Failed to update {self.model.__name__}") from exc
+            raise DatabaseError(f"Failed to update {self.model.__name__}: {exc}") from exc
 
     # ── Delete ─────────────────────────────────────────────────────────
 
