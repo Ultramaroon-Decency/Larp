@@ -1,9 +1,13 @@
-"""Authentication endpoints: Register, Login, Refresh Token, Logout."""
+"""Authentication endpoints: Register, Login, Google Login, Refresh Token, Logout, Me."""
+
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
-from app.dependencies import get_auth_service
+from app.dependencies import get_auth_service, get_current_user, get_user_repository
+from app.repositories.user_repository import UserRepository
 from app.schemas.auth import (
+    GoogleLoginRequest,
     LoginRequest,
     RefreshTokenRequest,
     RegisterRequest,
@@ -48,6 +52,24 @@ async def login(
     )
 
 
+@router.post("/google", response_model=ResponseEnvelope[TokenResponse])
+async def google_login(
+    body: GoogleLoginRequest,
+    auth_service: AuthService = Depends(get_auth_service),
+) -> ResponseEnvelope[TokenResponse]:
+    """Authenticate via Google ID token and issue Larp JWT access & refresh tokens.
+
+    Accepts a Google ID token, verifies it server-side, finds or creates the
+    Larp user, and returns the same token response as email/password login.
+    """
+    token_data = await auth_service.google_login(body.id_token)
+    return ResponseEnvelope(
+        success=True,
+        message="Google authentication successful",
+        data=token_data,
+    )
+
+
 @router.post("/refresh", response_model=ResponseEnvelope[TokenResponse])
 async def refresh_token(
     body: RefreshTokenRequest,
@@ -73,4 +95,29 @@ async def logout(
         success=True,
         message="Logged out successfully",
         data=None,
+    )
+
+
+@router.get("/me", response_model=ResponseEnvelope[UserResponse])
+async def get_current_user_profile(
+    current_user: dict = Depends(get_current_user),
+    user_repo: UserRepository = Depends(get_user_repository),
+) -> ResponseEnvelope[UserResponse]:
+    """Return the authenticated user's profile.
+
+    Works with any Larp JWT token — whether issued via email/password
+    or Google login.
+    """
+    user_id = UUID(current_user["id"])
+    user = await user_repo.get_by_id(user_id)
+    if user is None:
+        from app.core.exceptions import AuthenticationError
+        raise AuthenticationError(
+            message="User not found",
+            error_code="USER_NOT_FOUND",
+        )
+    return ResponseEnvelope(
+        success=True,
+        message="User profile retrieved successfully",
+        data=UserResponse.model_validate(user),
     )

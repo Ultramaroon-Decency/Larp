@@ -1,4 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+
+// Google Client ID — must match backend GOOGLE_CLIENT_ID
+const GOOGLE_CLIENT_ID = '474511502741-ftafb9rf41sia9i40uja5fj1higolm6v.apps.googleusercontent.com';
+
+// API base — proxied by Vite in dev
+const API_BASE = '/api/v1';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -7,6 +13,22 @@ interface AuthModalProps {
 }
 
 type AuthView = 'signin' | 'signup' | 'forgot';
+
+// Extend window for Google Identity Services
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (config: any) => void;
+          renderButton: (element: HTMLElement, config: any) => void;
+          prompt: () => void;
+          cancel: () => void;
+        };
+      };
+    };
+  }
+}
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSuccess }) => {
   const [view, setView] = useState<AuthView>('signin');
@@ -17,46 +39,192 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Load Google Identity Services script
+  useEffect(() => {
+    if (document.getElementById('google-gsi-script')) return;
+    const script = document.createElement('script');
+    script.id = 'google-gsi-script';
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    document.head.appendChild(script);
+  }, []);
+
+  // Handle Google credential response
+  const handleGoogleCredentialResponse = useCallback(async (response: any) => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const res = await fetch(`${API_BASE}/auth/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id_token: response.credential }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setError(data.message || 'Google authentication failed.');
+        setIsLoading(false);
+        return;
+      }
+
+      // Store Larp tokens — same as email/password login
+      const tokenData = data.data;
+      localStorage.setItem('access_token', tokenData.access_token);
+      localStorage.setItem('refresh_token', tokenData.refresh_token);
+
+      // Fetch user profile using the Larp token
+      const meRes = await fetch(`${API_BASE}/auth/me`, {
+        headers: { 'Authorization': `Bearer ${tokenData.access_token}` },
+      });
+
+      let userName = '';
+      let userEmail = '';
+      if (meRes.ok) {
+        const meData = await meRes.json();
+        if (meData.success && meData.data) {
+          userName = meData.data.full_name || meData.data.email?.split('@')[0] || '';
+          userEmail = meData.data.email || '';
+        }
+      }
+
+      // If /auth/me didn't work, decode basic info from response
+      if (!userEmail) {
+        // Parse the JWT to get the user ID (we don't have email in the token)
+        // Fall back to using the Google credential info
+        try {
+          const payload = JSON.parse(atob(response.credential.split('.')[1]));
+          userEmail = payload.email || '';
+          userName = payload.name || userEmail.split('@')[0];
+        } catch {
+          userEmail = 'google-user';
+          userName = 'Google User';
+        }
+      }
+
+      onLoginSuccess({ email: userEmail, name: userName });
+      resetForm();
+    } catch (err: any) {
+      setError(err.message || 'Google authentication failed. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [onLoginSuccess]);
+
+  // Initialize Google button when modal opens and GSI is loaded
+  useEffect(() => {
+    if (!isOpen || view === 'forgot') return;
+
+    const initializeGoogle = () => {
+      if (!window.google?.accounts?.id) return;
+
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: handleGoogleCredentialResponse,
+        auto_select: false,
+        cancel_on_tap_outside: true,
+      });
+
+      // Render the Google button into our container
+      const buttonContainer = document.getElementById('google-signin-button');
+      if (buttonContainer) {
+        buttonContainer.innerHTML = '';
+        window.google.accounts.id.renderButton(buttonContainer, {
+          type: 'standard',
+          theme: 'outline',
+          size: 'large',
+          width: '100%',
+          text: 'continue_with',
+          shape: 'rectangular',
+          logo_alignment: 'left',
+        });
+      }
+    };
+
+    // Try immediately, then retry after script loads
+    initializeGoogle();
+    const interval = setInterval(() => {
+      if (window.google?.accounts?.id) {
+        initializeGoogle();
+        clearInterval(interval);
+      }
+    }, 200);
+
+    return () => clearInterval(interval);
+  }, [isOpen, view, handleGoogleCredentialResponse]);
+
   if (!isOpen) return null;
 
   const handleEmailSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
-    // Simulate auth — replace with real backend call
-    setTimeout(() => {
-      if (email && password) {
-        onLoginSuccess({ email, name: email.split('@')[0] });
-        resetForm();
-      } else {
-        setError('Please fill in all fields.');
+    try {
+      const res = await fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setError(data.message || 'Invalid email or password.');
+        setIsLoading(false);
+        return;
       }
+
+      const tokenData = data.data;
+      localStorage.setItem('access_token', tokenData.access_token);
+      localStorage.setItem('refresh_token', tokenData.refresh_token);
+
+      onLoginSuccess({ email, name: email.split('@')[0] });
+      resetForm();
+    } catch (err: any) {
+      setError(err.message || 'Login failed. Please try again.');
+    } finally {
       setIsLoading(false);
-    }, 800);
+    }
   };
 
   const handleEmailSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
-    setTimeout(() => {
-      if (name && email && password) {
-        onLoginSuccess({ email, name });
-        resetForm();
-      } else {
-        setError('Please fill in all fields.');
-      }
-      setIsLoading(false);
-    }, 800);
-  };
+    try {
+      const res = await fetch(`${API_BASE}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, full_name: name }),
+      });
+      const data = await res.json();
 
-  const handleOAuthClick = (provider: string) => {
-    setIsLoading(true);
-    // Simulate OAuth redirect — replace with real OAuth flow
-    setTimeout(() => {
-      onLoginSuccess({ email: `user@${provider}.com`, name: `${provider} User` });
+      if (!res.ok || !data.success) {
+        setError(data.message || 'Registration failed.');
+        setIsLoading(false);
+        return;
+      }
+
+      // Auto-login after registration
+      const loginRes = await fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const loginData = await loginRes.json();
+
+      if (loginRes.ok && loginData.success) {
+        const tokenData = loginData.data;
+        localStorage.setItem('access_token', tokenData.access_token);
+        localStorage.setItem('refresh_token', tokenData.refresh_token);
+      }
+
+      onLoginSuccess({ email, name });
       resetForm();
-    }, 1000);
+    } catch (err: any) {
+      setError(err.message || 'Registration failed. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const resetForm = () => {
@@ -105,22 +273,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
         {/* OAuth Providers */}
         {view !== 'forgot' && (
           <div className="px-8 space-y-2.5">
-            <button
-              onClick={() => handleOAuthClick('google')}
-              disabled={isLoading}
-              className="w-full flex items-center justify-center gap-3 px-4 py-2.5 bg-white border border-outline-variant rounded-lg hover:bg-surface-container-low transition-all text-[14px] font-medium text-on-surface cursor-pointer disabled:opacity-50"
-            >
-              <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
-                <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 01-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
-                <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" fill="#34A853"/>
-                <path d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.997 8.997 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
-                <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
-              </svg>
-              Continue with Google
-            </button>
+            {/* Real Google Sign-In button rendered by GSI */}
+            <div
+              id="google-signin-button"
+              className="w-full flex items-center justify-center min-h-[44px]"
+            />
 
             <button
-              onClick={() => handleOAuthClick('github')}
               disabled={isLoading}
               className="w-full flex items-center justify-center gap-3 px-4 py-2.5 bg-[#24292f] border border-[#24292f] rounded-lg hover:bg-[#32383f] transition-all text-[14px] font-medium text-white cursor-pointer disabled:opacity-50"
             >
@@ -131,7 +290,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
             </button>
 
             <button
-              onClick={() => handleOAuthClick('metamask')}
               disabled={isLoading}
               className="w-full flex items-center justify-center gap-3 px-4 py-2.5 bg-surface border border-outline-variant rounded-lg hover:bg-surface-container-low transition-all text-[14px] font-medium text-on-surface cursor-pointer disabled:opacity-50"
             >

@@ -14,6 +14,7 @@ interface TopAppBarProps {
   authUser?: { email: string; name: string } | null;
   onProfileClick?: () => void;
   onLogout?: () => void;
+  onOpenWallet?: () => void;
 }
 
 export const TopAppBar: React.FC<TopAppBarProps> = ({
@@ -28,7 +29,8 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({
   onNewResearchClick,
   authUser,
   onProfileClick,
-  onLogout
+  onLogout,
+  onOpenWallet
 }) => {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
@@ -194,7 +196,7 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({
                     Account Settings
                   </button>
                   <button
-                    onClick={() => { setShowProfileMenu(false); }}
+                    onClick={() => { setShowProfileMenu(false); onOpenWallet ? onOpenWallet() : onProfileClick?.(); }}
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-[13px] text-on-surface hover:bg-surface-container-low transition-colors cursor-pointer"
                   >
                     <span className="material-symbols-outlined text-[18px] text-on-surface-variant">account_balance_wallet</span>

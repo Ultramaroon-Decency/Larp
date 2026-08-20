@@ -99,11 +99,14 @@ export default function App() {
 
   const handleProfileClick = () => {
     if (authUser) {
-      // If logged in, could show a profile dropdown — for now toggle auth modal
-      setIsAuthModalOpen(true);
+      setActiveTab('settings');
     } else {
       setIsAuthModalOpen(true);
     }
+  };
+
+  const handleOpenWallet = () => {
+    setActiveTab('settings');
   };
 
   const handleSynthesize = async (
@@ -195,8 +198,10 @@ export default function App() {
             const step: PipelineStep = {
               id: agentName,
               name: agentName,
+              description: `Executing ${agentName}`,
+              api: 'FastAPI Agent',
               status: wsData.status === 'in_progress' ? 'running' : wsData.status === 'completed' ? 'done' : 'error',
-              latency: wsData.execution_time_ms ? `${wsData.execution_time_ms}ms` : undefined,
+              duration: wsData.execution_time_ms ? Number(wsData.execution_time_ms) / 1000 : undefined,
             };
 
             setLivePipelineSteps((prev) => {
@@ -479,6 +484,7 @@ export default function App() {
           authUser={authUser}
           onProfileClick={handleProfileClick}
           onLogout={handleLogout}
+          onOpenWallet={handleOpenWallet}
         />
 
         {activeTab === 'new' && (

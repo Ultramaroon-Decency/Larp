@@ -153,6 +153,12 @@ class Settings(BaseSettings):
         description="Refresh-token lifetime in days (1 day – 90 days).",
     )
 
+    # ── Google OAuth ──────────────────────────────────────────────────
+    google_client_id: str = Field(
+        default="",
+        description="Google OAuth2 client ID for server-side ID token verification.",
+    )
+
     # ── CORS ───────────────────────────────────────────────────────────
     cors_origins: List[str] = Field(
         default_factory=list,

@@ -20,6 +20,10 @@ class UserRepository(BaseRepository[User]):
         """Find user by email address."""
         return await self.get_one_by(email=email)
 
+    async def get_by_google_sub(self, google_sub: str) -> User | None:
+        """Find user by Google subject ID."""
+        return await self.get_one_by(google_sub=google_sub)
+
     async def email_exists(self, email: str) -> bool:
         """Check if an email address is already registered."""
         return await self.exists(email=email)

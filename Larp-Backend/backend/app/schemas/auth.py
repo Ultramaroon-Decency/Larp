@@ -26,6 +26,12 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str = Field(description="Valid long-lived refresh token")
 
 
+class GoogleLoginRequest(BaseModel):
+    """Google OAuth login request payload."""
+
+    id_token: str = Field(description="Google ID token from Google Sign-In")
+
+
 class TokenResponse(BaseModel):
     """Token response payload returned upon successful login or refresh."""
 
@@ -46,6 +52,8 @@ class UserResponse(BaseModel):
     role: str = "user"
     is_active: bool
     is_superuser: bool
+    google_sub: str | None = None
+    avatar_url: str | None = None
     created_at: datetime
 
 
@@ -57,3 +65,4 @@ class TokenPayload(BaseModel):
     jti: str | None = Field(default=None, description="JWT ID claim for refresh token tracking")
     exp: int = Field(description="Expiration Unix timestamp")
     iat: int = Field(description="Issued-at Unix timestamp")
+

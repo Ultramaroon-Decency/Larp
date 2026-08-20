@@ -41,6 +41,8 @@ async def test_register_success(mock_hash, auth_service, mock_user_repo):
     mock_user.role = "user"
     mock_user.is_active = True
     mock_user.is_superuser = False
+    mock_user.google_sub = None
+    mock_user.avatar_url = None
     mock_user.created_at = datetime.now(timezone.utc)
     mock_user.updated_at = datetime.now(timezone.utc)
     mock_user_repo.create.return_value = mock_user

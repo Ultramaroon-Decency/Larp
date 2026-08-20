@@ -58,6 +58,8 @@ PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
     "/api/v1/health",
     "/api/v1/auth/login",
     "/api/v1/auth/register",
+    "/api/v1/auth/google",
+    "/api/v1/auth/refresh",
     "/api/v1/research",  # Anonymous quick search allowed; deep mode enforced at endpoint level
     "/ws",
     "/api/v1/ws",
