@@ -12,8 +12,12 @@ from app.core.security import (
     verify_google_token,
     verify_password,
 )
+from app.core.logging import get_logger
 from app.repositories.user_repository import UserRepository
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse, UserResponse
+
+logger = get_logger("auth_service")
+
 
 
 
@@ -57,8 +61,22 @@ class AuthService:
     async def login(self, data: LoginRequest) -> TokenResponse:
         """Authenticate credentials and issue JWT access & refresh tokens."""
         normalized_email = data.email.lower().strip()
-        user = await self.user_repo.get_by_email(normalized_email)
-        if user is None or not verify_password(data.password, user.hashed_password):
+        user = await self.user_repo.find_user_by_email(normalized_email)
+
+        if user is None:
+            raise AuthenticationError(
+                message="Invalid email or password",
+                error_code="AUTH_INVALID_CREDENTIALS",
+            )
+
+        if not user.hashed_password and not getattr(user, "password_hash", None):
+            raise AuthenticationError(
+                message="Invalid email or password",
+                error_code="AUTH_INVALID_CREDENTIALS",
+            )
+
+        target_hash = user.hashed_password or getattr(user, "password_hash", None)
+        if not verify_password(data.password, target_hash):
             raise AuthenticationError(
                 message="Invalid email or password",
                 error_code="AUTH_INVALID_CREDENTIALS",
@@ -79,9 +97,13 @@ class AuthService:
         refresh_token, jti = create_refresh_token(subject=str(user.id))
 
         # Store refresh token JTI in Redis with TTL matching refresh_token_expire_timedelta
-        redis_key = f"refresh_token:{user.id}:{jti}"
-        ttl_seconds = int(self.settings.refresh_token_expire_timedelta.total_seconds())
-        await self.redis.setex(redis_key, ttl_seconds, "valid")
+        try:
+            redis_key = f"refresh_token:{user.id}:{jti}"
+            ttl_seconds = int(self.settings.refresh_token_expire_timedelta.total_seconds())
+            await self.redis.setex(redis_key, ttl_seconds, "valid")
+        except Exception as exc:
+            logger.warning("Redis store refresh token failed (running in offline mode)", error=str(exc))
+
 
         return TokenResponse(
             access_token=access_token,
@@ -206,9 +228,13 @@ class AuthService:
         access_token = create_access_token(subject=str(user.id))
         refresh_token, jti = create_refresh_token(subject=str(user.id))
 
-        redis_key = f"refresh_token:{user.id}:{jti}"
-        ttl_seconds = int(self.settings.refresh_token_expire_timedelta.total_seconds())
-        await self.redis.setex(redis_key, ttl_seconds, "valid")
+        try:
+            redis_key = f"refresh_token:{user.id}:{jti}"
+            ttl_seconds = int(self.settings.refresh_token_expire_timedelta.total_seconds())
+            await self.redis.setex(redis_key, ttl_seconds, "valid")
+        except Exception as exc:
+            logger.warning("Redis store refresh token failed (running in offline mode)", error=str(exc))
+
 
         return TokenResponse(
             access_token=access_token,

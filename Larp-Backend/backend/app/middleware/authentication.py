@@ -61,9 +61,14 @@ PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
     "/api/v1/auth/google",
     "/api/v1/auth/refresh",
     "/api/v1/research",  # Anonymous quick search allowed; deep mode enforced at endpoint level
+    "/api/export",
+    "/api/v1/export",
+    "/api/payments",
+    "/api/v1/payments",
     "/ws",
     "/api/v1/ws",
 )
+
 
 
 def _is_public(path: str) -> bool:

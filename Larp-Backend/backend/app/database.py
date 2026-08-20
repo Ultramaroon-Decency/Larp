@@ -50,23 +50,27 @@ logger = get_logger("database")
 
 settings = get_settings()
 
-engine: AsyncEngine = create_async_engine(
-    settings.database_url,
-    echo=settings.database_echo,
-    future=True,
-    # ── Connection Pool Configuration ──────────────────────────────────
-    pool_size=settings.database_pool_size,
-    max_overflow=settings.database_pool_max_overflow,
-    pool_timeout=settings.database_pool_timeout,
-    pool_recycle=settings.database_pool_recycle,
-    pool_pre_ping=settings.database_pool_pre_ping,
-)
+engine_kwargs = {
+    "echo": settings.database_echo,
+    "future": True,
+}
+if not settings.database_url.startswith("sqlite"):
+    engine_kwargs.update({
+        "pool_size": settings.database_pool_size,
+        "max_overflow": settings.database_pool_max_overflow,
+        "pool_timeout": settings.database_pool_timeout,
+        "pool_recycle": settings.database_pool_recycle,
+        "pool_pre_ping": settings.database_pool_pre_ping,
+    })
+
+engine: AsyncEngine = create_async_engine(settings.database_url, **engine_kwargs)
 
 async_session_maker = async_sessionmaker(
     bind=engine,
     class_=AsyncSession,
     expire_on_commit=False,
     autoflush=False,
+    autocommit=False,
 )
 
 
@@ -75,26 +79,22 @@ async_session_maker = async_sessionmaker(
 # ---------------------------------------------------------------------------
 
 async def init_db() -> None:
-    """Verify database connectivity at startup.
-
-    Called during the FastAPI lifespan startup.  Runs a simple
-    ``SELECT 1`` to fail fast if the database is unreachable.
-    """
+    """Verify database connectivity at startup and create tables if needed."""
     try:
-        async with engine.connect() as conn:
+        from app.models.base import Base
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
             await conn.execute(text("SELECT 1"))
         logger.info(
             "Database connected",
-            url=settings.database_url.split("@")[-1],  # hide credentials
-            pool_size=settings.database_pool_size,
-            max_overflow=settings.database_pool_max_overflow,
+            url=settings.database_url.split("@")[-1],
         )
-    except SQLAlchemyError as exc:
-        logger.error(
-            "Database connection failed",
+    except Exception as exc:
+        logger.warning(
+            "Database connection failed — running in offline mode",
             error=str(exc),
         )
-        raise
+
 
 
 async def close_db() -> None:

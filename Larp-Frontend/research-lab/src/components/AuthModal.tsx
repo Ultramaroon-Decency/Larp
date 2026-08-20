@@ -23,41 +23,127 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
     e.preventDefault();
     setError('');
     setIsLoading(true);
-    // Simulate auth — replace with real backend call
-    setTimeout(() => {
-      if (email && password) {
-        onLoginSuccess({ email, name: email.split('@')[0] });
-        resetForm();
-      } else {
-        setError('Please fill in all fields.');
+    try {
+      const res = await fetch('/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.message || json.detail || 'Invalid email or password.');
+        setIsLoading(false);
+        return;
       }
+      const tokenData = json.data || json;
+      if (tokenData.access_token) {
+        localStorage.setItem('access_token', tokenData.access_token);
+      }
+      const meRes = await fetch('/api/v1/auth/me', {
+        headers: { Authorization: `Bearer ${tokenData.access_token}` },
+      });
+      if (meRes.ok) {
+        const meJson = await meRes.json();
+        const userObj = meJson.data || meJson;
+        onLoginSuccess({ email: userObj.email, name: userObj.name || userObj.full_name || email.split('@')[0] });
+      } else {
+        onLoginSuccess({ email, name: email.split('@')[0] });
+      }
+      resetForm();
+    } catch (err: any) {
+      setError('Unable to connect to authentication server.');
+    } finally {
       setIsLoading(false);
-    }, 800);
+    }
   };
 
   const handleEmailSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
-    setTimeout(() => {
-      if (name && email && password) {
-        onLoginSuccess({ email, name });
-        resetForm();
-      } else {
-        setError('Please fill in all fields.');
+    try {
+      const res = await fetch('/api/v1/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, name, full_name: name }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.message || json.detail || 'Registration failed.');
+        setIsLoading(false);
+        return;
       }
+      // Auto login after registration
+      const loginRes = await fetch('/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      if (loginRes.ok) {
+        const loginJson = await loginRes.json();
+        const tokenData = loginJson.data || loginJson;
+        if (tokenData.access_token) {
+          localStorage.setItem('access_token', tokenData.access_token);
+        }
+      }
+      onLoginSuccess({ email, name: name || email.split('@')[0] });
+      resetForm();
+    } catch (err: any) {
+      setError('Unable to connect to authentication server.');
+    } finally {
       setIsLoading(false);
-    }, 800);
+    }
   };
 
-  const handleOAuthClick = (provider: string) => {
+  const handleOAuthClick = async (provider: string) => {
+    if (provider !== 'google') {
+      setError(`${provider} login is not supported. Please use Google Sign-In or Email.`);
+      return;
+    }
+    setError('');
     setIsLoading(true);
-    // Simulate OAuth redirect — replace with real OAuth flow
-    setTimeout(() => {
-      onLoginSuccess({ email: `user@${provider}.com`, name: `${provider} User` });
+
+    // Prompt user for Google ID token or prompt input
+    const credential = prompt('Enter your Google ID Token to authenticate with Google:');
+    if (!credential) {
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/v1/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.message || json.detail || 'Google ID Token verification failed.');
+        setIsLoading(false);
+        return;
+      }
+      const tokenData = json.data || json;
+      if (tokenData.access_token) {
+        localStorage.setItem('access_token', tokenData.access_token);
+      }
+      const meRes = await fetch('/api/v1/auth/me', {
+        headers: { Authorization: `Bearer ${tokenData.access_token}` },
+      });
+      if (meRes.ok) {
+        const meJson = await meRes.json();
+        const userObj = meJson.data || meJson;
+        onLoginSuccess({ email: userObj.email, name: userObj.name || userObj.full_name || 'Google User' });
+      } else {
+        onLoginSuccess({ email: `user@${provider}.com`, name: 'Google User' });
+      }
       resetForm();
-    }, 1000);
+    } catch (err: any) {
+      setError('Google authentication failed.');
+    } finally {
+      setIsLoading(false);
+    }
   };
+
 
   const resetForm = () => {
     setEmail('');

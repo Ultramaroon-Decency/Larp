@@ -114,7 +114,14 @@ def create_app() -> FastAPI:
     # ── Routers ────────────────────────────────────────────────────────
     app.include_router(api_router, prefix="/api/v1")
 
+    # Frontend compatibility routes
+    from app.api.v1.endpoints.export import router as export_router
+    from app.api.v1.endpoints.payments import router as payments_router
+    app.include_router(export_router, prefix="/api/export", tags=["Frontend Compatibility Export"])
+    app.include_router(payments_router, prefix="/api/payments", tags=["Frontend Compatibility Payments"])
+
     return app
+
 
 
 app = create_app()
