@@ -44,11 +44,10 @@ import path from 'path';
 import { EventEmitter } from 'node:events';
 import { createServer as createViteServer } from 'vite';
 import Groq from 'groq-sdk';
-import {
-  runResearchPipeline,
-  createInitialSteps,
-} from './orchestrator/researchPipeline.js';
+import { runResearchPipeline, createInitialSteps } from './orchestrator/researchPipeline.js';
 import type { PipelineEvent, PaymentReceipt } from './orchestrator/types.js';
+import { tryLoadAgentAccount, getReceiverAddress, getFacilitatorUrl, USDC_TESTNET_ASA_ID } from './orchestrator/algorandClient.js';
+import { x402PaymentMiddleware } from './orchestrator/x402Server.js';
 
 // ─── Session store for SSE connections ───────────────────────────────────────
 // Each active research session has an EventEmitter + event buffer so that
@@ -107,12 +106,27 @@ async function startServer() {
 
   // ── GET /api/health ──────────────────────────────────────────────────────────
   app.get('/api/health', (_req, res) => {
+    const hasMnemonic = !!process.env.ALGORAND_AGENT_MNEMONIC;
     res.json({
       status: 'ok',
       time: new Date().toISOString(),
       groqConfigured: !!process.env.GROQ_API_KEY,
       tavilyConfigured: !!process.env.TAVILY_API_KEY,
-      walletMode: process.env.AGENT_WALLET_PRIVATE_KEY ? 'real' : 'simulation',
+      walletMode: hasMnemonic ? 'real' : 'simulation',
+      network: 'Algorand Testnet',
+    });
+  });
+
+  // ── GET /api/info ────────────────────────────────────────────────────────────
+  app.get('/api/info', (_req, res) => {
+    res.json({
+      network: 'Algorand Testnet',
+      receiverAddress: getReceiverAddress(),
+      facilitatorUrl: getFacilitatorUrl(),
+      algodServer: process.env.ALGOD_SERVER || 'https://testnet-api.algonode.cloud',
+      indexerServer: process.env.INDEXER_SERVER || 'https://testnet-idx.algonode.cloud',
+      assetId: USDC_TESTNET_ASA_ID,
+      walletMode: process.env.ALGORAND_AGENT_MNEMONIC ? 'real' : 'simulation',
     });
   });
 
@@ -156,7 +170,7 @@ async function startServer() {
   // Main research endpoint. Accepts a sessionId for SSE progress streaming.
   // Runs the 5-step pipeline when Gemini is configured; falls back to mock
   // data if GEMINI_API_KEY is absent.
-  app.post('/api/research/synthesize', async (req, res) => {
+  app.post('/api/research/synthesize', x402PaymentMiddleware('0.0035'), async (req, res) => {
     const {
       query,
       mode = 'quick',
@@ -263,7 +277,7 @@ async function startServer() {
       .toFixed(4);
 
     res.json({
-      mode: process.env.AGENT_WALLET_PRIVATE_KEY ? 'real' : 'simulation',
+      mode: process.env.ALGORAND_AGENT_MNEMONIC ? 'real' : 'simulation',
       totalTransactions: globalPaymentLedger.length,
       totalSpentUSDC: totalSpent,
       receipts: globalPaymentLedger.slice(-100), // last 100
@@ -331,7 +345,7 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`\n🔬 Research Lab server running at http://0.0.0.0:${PORT}`);
-    console.log(`💳 x402 payment mode: ${process.env.AGENT_WALLET_PRIVATE_KEY ? 'REAL (Base Sepolia)' : 'SIMULATION'}`);
+    console.log(`💳 x402 payment mode: ${process.env.ALGORAND_AGENT_MNEMONIC ? 'REAL (Algorand Testnet)' : 'SIMULATION'}`);
     console.log(`🤖 Groq API: ${process.env.GROQ_API_KEY ? 'configured' : '⚠  NOT SET (fallback mode)'}`);
     console.log(`🔍 Tavily Search: ${process.env.TAVILY_API_KEY ? 'configured' : '⚠  NOT SET (using model knowledge)'}\n`);
   });
