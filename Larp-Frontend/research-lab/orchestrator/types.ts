@@ -23,12 +23,13 @@ export interface PaymentReceipt {
   stepId: string;
   stepName: string;
   amount: string;      // e.g. "0.0025"
-  currency: 'USDC';
-  network: 'Base Sepolia (Simulation)' | 'Base Sepolia' | 'Base';
-  txHash: string;      // 0x-prefixed 32-byte hex
-  from: string;        // agent wallet address
-  payTo: string;       // API provider wallet address
+  currency: 'USDC (ASA 10458941)';
+  network: 'Algorand Testnet (Simulation)' | 'Algorand Testnet';
+  txHash: string;      // Algorand TxID
+  from: string;        // Agent wallet address
+  payTo: string;       // Receiver wallet address
   timestamp: string;   // ISO 8601
+  explorerUrl?: string; // Link to Lora Explorer
 }
 
 /** Server-Sent Event payload streamed to the frontend during pipeline execution. */

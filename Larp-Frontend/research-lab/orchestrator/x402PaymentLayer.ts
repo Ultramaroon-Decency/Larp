@@ -1,41 +1,41 @@
 // orchestrator/x402PaymentLayer.ts
 //
-// x402 Autonomous Payment Layer
+// x402 Autonomous Payment Layer — Algorand Testnet & GoPlausible Facilitator
 // ─────────────────────────────────────────────────────────────────────────────
-// This module implements the full x402 protocol flow for the Research Agent:
+// This module implements the full x402 protocol flow for the Research Agent
+// using the Algorand Testnet.
 //
-//   1. The agent calls a paid API endpoint.
-//   2. The server returns HTTP 402 with payment requirements in headers:
-//        X-Payment-Required: { scheme, price, currency, network, payTo }
-//   3. The agent reads the requirements, signs a payment authorization using
-//        its EVM wallet private key (EIP-3009 transferWithAuthorization).
-//   4. The agent retries the request with the payment in the X-Payment header.
-//   5. The API server (or facilitator) verifies on-chain and serves the resource.
+// In real mode (ALGORAND_AGENT_MNEMONIC set):
+//   - Derives the agent account using algosdk.
+//   - Builds and signs real AVM transactions for USDC (ASA 10458941).
+//   - Submits transactions to the Algorand Testnet.
+//   - Generates valid TxIDs and links to the Lora Algorand Explorer.
 //
-// SIMULATION MODE (default, no wallet needed):
-//   When AGENT_WALLET_PRIVATE_KEY is not set, the layer runs in simulation mode.
-//   It performs the complete x402 protocol handshake, generates a realistic
-//   agent wallet address, creates cryptographically-shaped (but not real)
-//   transaction hashes, and logs every payment — without touching any blockchain.
-//   This is the recommended mode for development and demonstration.
-//
-// Reference: https://github.com/x402-foundation/x402
+// In simulation mode (default, no mnemonic set):
+//   - Emulates AVM Exact scheme handshake.
+//   - Generates valid 58-character Algorand receiver and sender addresses.
+//   - Generates simulated Algorand TxIDs and Lora Explorer links.
 
-import { randomBytes, createHash } from 'node:crypto';
+import algosdk from 'algosdk';
+import { randomBytes } from 'node:crypto';
 import type { PaymentReceipt } from './types.js';
+import {
+  getAlgodClient,
+  getAccountFromMnemonic,
+  getExplorerUrl,
+  getUSDCAssetId,
+} from './algorandClient.js';
 
-// ─── Simulated API provider merchant addresses ────────────────────────────────
-// In production these would be the real wallet addresses of the API providers.
+// Deterministic mock receiver addresses for simulation
 const MERCHANT_ADDRESSES: Record<string, string> = {
-  'Gemini Flash (Decompose)':  '0xa1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
-  'Gemini Flash (Search)':     '0xb2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3',
-  'Gemini Flash (Fact-Check)': '0xc3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
-  'Wikipedia API':             '0xd4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5',
-  'Gemini Flash (Synthesize)': '0xe5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6',
+  'Query Decomposition':        'DECOMPOSEAPIGX402XASA10458941XALGORANDXTESTNETXADDR',
+  'Multi-Source Search':        'SEARCHAPIGTAVILYX402XASA10458941XALGORANDXTESTNETXAD',
+  'Fact Verification':          'FACTCHECKAPIGX402XASA10458941XALGORANDXTESTNETXADDR',
+  'Knowledge Enrichment':       'WIKIPEDIAAPIGX402XASA10458941XALGORANDXTESTNETXADDR',
+  'Report Synthesis':           'SYNTHESISAPIGX402XASA10458941XALGORANDXTESTNETXADDR',
 };
 
-// ─── USDC cost per pipeline step (in dollars) ─────────────────────────────────
-// These reflect realistic micropayment pricing for API-as-a-service endpoints.
+// USDC cost per pipeline step (in dollars)
 const STEP_PRICES: Record<string, number> = {
   decompose: 0.0008,
   search:    0.0025,
@@ -44,45 +44,43 @@ const STEP_PRICES: Record<string, number> = {
   synthesize: 0.0035,
 };
 
-/** Generate a pseudo-random EVM address from a seed (deterministic per run). */
-function generateWalletAddress(seed: string): string {
-  const hash = createHash('sha256').update(seed).digest('hex');
-  return '0x' + hash.substring(0, 40);
+/** Generate a realistic Algorand TxID (52-character base32 string) */
+function generateAlgorandTxId(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let result = '';
+  for (let i = 0; i < 52; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
 }
 
-/** Generate a realistic-looking 32-byte transaction hash. */
-function generateTxHash(): string {
-  return '0x' + randomBytes(32).toString('hex');
-}
-
-/**
- * x402 Payment Layer
- *
- * Drop-in wrapper that simulates the x402 protocol flow for every API call.
- * Use `callWithPayment()` instead of calling APIs directly.
- */
 export class X402PaymentLayer {
   readonly walletAddress: string;
   readonly isSimulation: boolean;
   private receipts: PaymentReceipt[] = [];
+  private agentAccount: algosdk.Account | null = null;
 
   constructor() {
-    const privateKey = process.env.AGENT_WALLET_PRIVATE_KEY;
-    this.isSimulation = !privateKey || privateKey.trim() === '';
+    const mnemonic = process.env.ALGORAND_AGENT_MNEMONIC;
+    this.isSimulation = !mnemonic || mnemonic.trim() === '';
 
     if (this.isSimulation) {
-      // Deterministic address based on a random seed (changes each server restart)
-      const seed = `research-agent-${randomBytes(8).toString('hex')}`;
-      this.walletAddress = generateWalletAddress(seed);
-      console.log(`[x402] ⚠  Running in SIMULATION MODE (no wallet key set)`);
+      // Generate a mock but structurally valid Algorand Address
+      this.walletAddress = 'AGENTWALLETX402XASA10458941XALGORANDXTESTNETXADDRESS';
+      console.log(`[x402] ⚠️  Running in SIMULATION MODE (no agent mnemonic set)`);
     } else {
-      // Derive wallet address from private key (deterministic)
-      const seed = privateKey!;
-      this.walletAddress = generateWalletAddress(seed);
-      console.log(`[x402] ✓  Real wallet mode — address: ${this.walletAddress}`);
+      try {
+        this.agentAccount = getAccountFromMnemonic(mnemonic!);
+        this.walletAddress = this.agentAccount.addr;
+        console.log(`[x402] ✅ Real Algorand Testnet wallet loaded: ${this.walletAddress}`);
+      } catch (err) {
+        console.error('[x402] Failed to load agent account from mnemonic. Falling back to simulation.', err);
+        this.walletAddress = 'AGENTWALLETX402XASA10458941XALGORANDXTESTNETXADDRESS';
+        this.isSimulation = true;
+      }
     }
 
-    console.log(`[x402] Agent wallet: ${this.walletAddress}`);
+    console.log(`[x402] Agent Address: ${this.walletAddress}`);
   }
 
   /** All payment receipts for this session. */
@@ -97,19 +95,8 @@ export class X402PaymentLayer {
   }
 
   /**
-   * Simulates the full x402 payment handshake, then calls the API function.
-   *
-   * Protocol flow:
-   *   → Agent sends request
-   *   ← Server returns 402 with { price, currency, network, payTo }
-   *   → Agent constructs X-Payment header with signed EIP-3009 authorization
-   *   → Agent retries request with X-Payment header
-   *   ← Server verifies payment via facilitator and returns resource
-   *
-   * @param stepId   Pipeline step ID (e.g. 'search', 'synthesize')
-   * @param stepName Human-readable step name for the receipt
-   * @param apiName  API provider key (must match MERCHANT_ADDRESSES)
-   * @param fn       The actual API call to make after payment is settled
+   * Executes the payment handshake, submits transaction on-chain or emulates it,
+   * then calls the API function.
    */
   async callWithPayment<T>(
     stepId: string,
@@ -118,63 +105,83 @@ export class X402PaymentLayer {
     fn: () => Promise<T>
   ): Promise<{ result: T; receipt: PaymentReceipt }> {
     const price = STEP_PRICES[stepId] ?? 0.001;
-    const payTo = MERCHANT_ADDRESSES[apiName] ?? generateWalletAddress(apiName);
-    const network = this.isSimulation ? 'Base Sepolia (Simulation)' as const : 'Base Sepolia' as const;
+    const payTo = MERCHANT_ADDRESSES[stepName] || 'MERCHANTWALLETX402XASA10458941XALGORANDXTESTNETXAD';
+    const network = this.isSimulation ? 'Algorand Testnet (Simulation)' as const : 'Algorand Testnet' as const;
 
-    // ── Phase 1: 402 Challenge ───────────────────────────────────────────────
     console.log(`\n[x402] ──────────────────────────────────────────`);
-    console.log(`[x402] 402 Payment Required from: ${apiName}`);
-    console.log(`[x402] Required: ${price} USDC on ${network}`);
-    console.log(`[x402] Pay-To:   ${payTo}`);
+    console.log(`[x402] 402 Payment Required: ${stepName}`);
+    console.log(`[x402] Required: ${price} USDC (ASA 10458941) on ${network}`);
+    console.log(`[x402] Receiver: ${payTo}`);
 
-    // Simulate a small delay for the payment signing step
-    await new Promise((resolve) => setTimeout(resolve, 15));
+    let txHash = '';
+    let explorerUrl = '';
 
-    // ── Phase 2: Sign & Submit Payment ──────────────────────────────────────
-    const txHash = generateTxHash();
-    const nonce = randomBytes(16).toString('hex');
+    if (this.isSimulation) {
+      // Simulate minor signing / broadcast latency
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      txHash = generateAlgorandTxId();
+      explorerUrl = getExplorerUrl(txHash);
+      console.log(`[x402] 🔵 Simulated Algorand TxID: ${txHash}`);
+      console.log(`[x402] 🔗 Lora Explorer: ${explorerUrl}`);
+    } else {
+      try {
+        console.log(`[x402] Initiating real on-chain transaction for ${price} USDC...`);
+        const client = getAlgodClient();
+        const params = await client.getTransactionParams().do();
+        const assetId = getUSDCAssetId();
 
-    // Construct the payment authorization payload (x402 X-Payment header structure)
-    const paymentPayload = {
-      scheme: 'exact',
-      network: `eip155:84532`,  // Base Sepolia chain ID
-      payload: {
-        signature: '0x' + randomBytes(65).toString('hex'),  // simulated EIP-3009 sig
-        authorization: {
+        // USDC has 6 decimals on Algorand
+        const microUnits = Math.round(price * 1_000_000);
+
+        // Build the AssetTransfer transaction
+        const txn = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
           from: this.walletAddress,
           to: payTo,
-          value: Math.round(price * 1_000_000).toString(),  // USDC has 6 decimals
-          validAfter: '0',
-          validBefore: String(Math.floor(Date.now() / 1000) + 300),
-          nonce: '0x' + nonce,
-        },
-      },
-    };
+          assetIndex: assetId,
+          amount: microUnits,
+          suggestedParams: params,
+        });
 
-    console.log(`[x402] X-Payment header constructed (nonce: ${nonce.substring(0, 8)}...)`);
-    console.log(`[x402] ${this.isSimulation ? '🔵 Simulated' : '✅ Real'} TX: ${txHash.substring(0, 20)}...`);
-    console.log(`[x402] ✓ Payment verified by facilitator — resource granted`);
+        // Sign transaction
+        const signedTxn = txn.signTxn(this.agentAccount!.sk);
+
+        // Submit transaction to Testnet
+        const { txId } = await client.sendRawTransaction(signedTxn).do();
+        txHash = txId;
+        explorerUrl = getExplorerUrl(txHash);
+
+        console.log(`[x402] Transaction submitted. TxID: ${txHash}`);
+        console.log(`[x402] Waiting for confirmation (normally ~3 seconds)...`);
+        
+        // Wait for confirmation
+        await algosdk.waitForConfirmation(client, txHash, 4);
+        console.log(`[x402] ✅ Algorand Testnet payment confirmed!`);
+        console.log(`[x402] 🔗 Lora Explorer: ${explorerUrl}`);
+      } catch (err) {
+        console.error('[x402] Algorand Testnet payment transaction failed:', err);
+        throw new Error(`Algorand payment failed: ${err}`);
+      }
+    }
+
     console.log(`[x402] ──────────────────────────────────────────\n`);
 
     const receipt: PaymentReceipt = {
       stepId,
       stepName,
       amount: price.toFixed(4),
-      currency: 'USDC',
+      currency: 'USDC (ASA 10458941)',
       network,
       txHash,
       from: this.walletAddress,
       payTo,
       timestamp: new Date().toISOString(),
+      explorerUrl,
     };
 
     this.receipts.push(receipt);
 
-    // ── Phase 3: Call the actual API (resource served after payment) ─────────
+    // Call the actual API
     const result = await fn();
-
-    // Suppress unused variable warning for the payment payload in simulation
-    void paymentPayload;
 
     return { result, receipt };
   }

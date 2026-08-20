@@ -49,6 +49,7 @@ import {
   createInitialSteps,
 } from './orchestrator/researchPipeline.js';
 import type { PipelineEvent, PaymentReceipt } from './orchestrator/types.js';
+import { x402PaymentMiddleware } from './orchestrator/x402Server.js';
 
 // ─── Session store for SSE connections ───────────────────────────────────────
 // Each active research session has an EventEmitter + event buffer so that
@@ -104,6 +105,9 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json({ limit: '10mb' }));
+
+  // Register the x402 payment validation middleware
+  app.use(x402PaymentMiddleware);
 
   // ── GET /api/health ──────────────────────────────────────────────────────────
   app.get('/api/health', (_req, res) => {
