@@ -58,10 +58,17 @@ PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
     "/api/v1/health",
     "/api/v1/auth/login",
     "/api/v1/auth/register",
+    "/api/v1/auth/google",
+    "/api/v1/auth/refresh",
     "/api/v1/research",  # Anonymous quick search allowed; deep mode enforced at endpoint level
+    "/api/export",
+    "/api/v1/export",
+    "/api/payments",
+    "/api/v1/payments",
     "/ws",
     "/api/v1/ws",
 )
+
 
 
 def _is_public(path: str) -> bool:
@@ -123,18 +130,18 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        # ── Skip public paths ──────────────────────────────────────────
-        if _is_public(request.url.path):
-            return await call_next(request)
-
         # ── Skip CORS preflight ────────────────────────────────────────
         if request.method == "OPTIONS":
             return await call_next(request)
 
         correlation_id = get_correlation_id()
+        auth_header = request.headers.get("Authorization", "")
+
+        # ── Skip public paths if no Bearer token is provided ───────────
+        if _is_public(request.url.path) and not auth_header.startswith("Bearer "):
+            return await call_next(request)
 
         # ── Extract Bearer token ───────────────────────────────────────
-        auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
             logger.warning(
                 "Missing or malformed Authorization header",
@@ -142,6 +149,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                 correlation_id=correlation_id,
             )
             return _auth_error(401, "Missing or malformed Authorization header", correlation_id)
+
 
         token = auth_header[7:]  # strip "Bearer "
 
@@ -156,16 +164,13 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             )
             return _auth_error(401, "Invalid or expired token", correlation_id)
 
-        # ── Build user context ─────────────────────────────────────────
-        # The payload.sub contains the user ID from the JWT.
-        # In a full implementation, query the DB here to verify the
-        # user still exists and is active.  For now we build a minimal
-        # user dict from the token claims.
+        # ── Build user context from token claims ───────────────────────
         user: dict[str, Any] = {
             "id": payload.sub,
             "token_iat": payload.iat,
             "token_exp": payload.exp,
         }
+
 
         # ── Store in request state + contextvars ───────────────────────
         request.state.user = user
@@ -179,3 +184,4 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         )
 
         return await call_next(request)
+

@@ -2,8 +2,9 @@
 
 from fastapi import APIRouter, Depends, status
 
-from app.dependencies import get_auth_service
+from app.dependencies import get_auth_service, get_current_active_user
 from app.schemas.auth import (
+    GoogleLoginRequest,
     LoginRequest,
     RefreshTokenRequest,
     RegisterRequest,
@@ -74,3 +75,30 @@ async def logout(
         message="Logged out successfully",
         data=None,
     )
+
+
+@router.post("/google", response_model=ResponseEnvelope[TokenResponse])
+async def google_login(
+    body: GoogleLoginRequest,
+    auth_service: AuthService = Depends(get_auth_service),
+) -> ResponseEnvelope[TokenResponse]:
+    """Authenticate Google ID token and issue JWT access & refresh tokens."""
+    token_data = await auth_service.google_login(body.credential)
+    return ResponseEnvelope(
+        success=True,
+        message="Google authentication successful",
+        data=token_data,
+    )
+
+
+@router.get("/me", response_model=ResponseEnvelope[UserResponse])
+async def get_current_user_profile(
+    current_user=Depends(get_current_active_user),
+) -> ResponseEnvelope[UserResponse]:
+    """Return the currently authenticated user's profile."""
+    return ResponseEnvelope(
+        success=True,
+        message="Current user profile retrieved successfully",
+        data=UserResponse.model_validate(current_user),
+    )
+

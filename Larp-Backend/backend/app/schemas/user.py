@@ -21,10 +21,13 @@ class UserRead(BaseModel):
     id: uuid.UUID
     email: EmailStr
     full_name: str | None = None
+    name: str | None = None
+    avatar_url: str | None = None
     role: str = "user"
     is_active: bool
     is_superuser: bool
     created_at: datetime
+    last_login_at: datetime | None = None
 
 
 class UserUpdate(BaseModel):
