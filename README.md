@@ -23,6 +23,9 @@ User Query → Planner → Search → Fact Checker → Citation → Report
 4. **Citation Agent** — Formats inline `[1]`, `[2]` academic-style citations
 5. **Report Agent** — Synthesizes a full Markdown report using NVIDIA GPT-OSS 120B (with multi-provider fallback)
 
+> **✨ NEW: Real-Time x402 Micropayments**
+> Before executing *any* of the 5 steps above, the pipeline must successfully negotiate an HTTP 402 Payment Required challenge and transfer real **USDC on the Algorand Testnet** to the resource server.
+
 All progress is streamed live to the frontend via WebSocket.
 
 ---
@@ -32,7 +35,8 @@ All progress is streamed live to the frontend via WebSocket.
 ```
 Larp/
 ├── Larp-Frontend/research-lab/   # React + TypeScript + Tailwind v4 + Vite
-├── Larp-Backend/backend/         # FastAPI + PostgreSQL + Redis + WebSocket
+├── Larp-Frontend/x402-server/    # Standalone Hono server demonstrating x402 challenges
+├── Larp-Backend/backend/         # FastAPI + PostgreSQL + Redis + WebSocket + Algorand Payments
 └── LarpAi/                       # Core AI agent classes (imported by backend)
 ```
 
@@ -129,12 +133,22 @@ npm run dev
 # → http://localhost:5173
 ```
 
-### 4. Run Together
+### 4. x402 Resource Server (Optional Demo)
+
+```bash
+cd Larp-Frontend/x402-server
+npm install
+npm start
+# → http://localhost:4021
+```
+
+### 5. Run Together
 
 | Service | Port | Command |
 |---------|------|---------|
 | Backend API | `8000` | `python -m uvicorn app.main:app --reload --port 8000` |
 | Frontend | `5173` | `npm run dev` in `Larp-Frontend/research-lab/` |
+| x402 Server | `4021` | `npm start` in `Larp-Frontend/x402-server/` |
 
 ---
 
@@ -170,38 +184,52 @@ Only `NVIDIA_API_KEY`, `GROQ_API_KEY`, and `TAVILY_API_KEY` are required. All ot
 
 ---
 
-## Environment Variables
+## Environment Variables & Keys Guide
 
-### Required
+This project requires different keys depending on what you want to do.
+
+### Minimum Required (Simulation Mode)
+To run the research pipeline in **Simulation Mode** (fake payments), you only need these API keys in your backend `.env`:
+
+| Variable | Provider | Purpose |
+|----------|----------|-------------|
+| `NVIDIA_API_KEY` | [NVIDIA Build](https://build.nvidia.com/) | Powers the final **Report Agent** (GPT-OSS 120B/20B) for high-quality synthesis. |
+| `GROQ_API_KEY` | [Groq](https://console.groq.com/) | Powers the **Planner** and **Fact-Checker** agents (Llama 3.3) for fast logic. |
+| `TAVILY_API_KEY` | [Tavily](https://app.tavily.com/) | Powers the **Search Agent** for deep web scraping and research. |
+| `DATABASE_URL` | Local Postgres | `postgresql+asyncpg://user:password@localhost:5432/researchdb` |
+| `REDIS_URL` | Local Redis | `redis://localhost:6379/0` |
+| `JWT_SECRET_KEY` | Random String | Secret for JWT token signing for user auth. |
+
+### Real Payments (Algorand Testnet)
+To enable real x402 micropayments on the Algorand Testnet, add these to your backend `.env`:
+
+| Variable | Purpose |
+|----------|-------------|
+| `ALGORAND_AGENT_MNEMONIC` | 25-word mnemonic for the **Agent Wallet**. This wallet *sends* the USDC payments. It must be funded with Testnet ALGO (for gas) and Testnet USDC (ASA `10458941`), and be opted-in to the USDC ASA. |
+| `AVM_ADDRESS` | The public address of the **Merchant Wallet**. This wallet *receives* the USDC. It must also be opted-in to the USDC ASA. |
+
+*If `ALGORAND_AGENT_MNEMONIC` is missing, the system gracefully falls back to `payment_mode=SIMULATION`.*
+
+### Optional Fallback LLMs
+If NVIDIA or Groq rate limit you, the Report Agent will cascade to these if provided:
 
 | Variable | Description |
 |----------|-------------|
-| `NVIDIA_API_KEY` | NVIDIA API key for report generation (GPT-OSS models) |
-| `GROQ_API_KEY` | Groq API key for planning and fact-checking |
-| `TAVILY_API_KEY` | Tavily API key for web search |
-| `DATABASE_URL` | PostgreSQL connection string |
-| `REDIS_URL` | Redis connection string |
-| `JWT_SECRET_KEY` | Secret for JWT token signing |
-
-### Optional
-
-| Variable | Description |
-|----------|-------------|
-| `GEMINI_API_KEY` | Google Gemini API key (fallback report provider) |
-| `OPENAI_API_KEY` | OpenAI API key (fallback report provider) |
-| `OPENROUTER_API_KEY` | OpenRouter API key (fallback report provider) |
-| `AGENT_WALLET_PRIVATE_KEY` | EVM wallet key for x402 payments (blank = simulation) |
+| `GEMINI_API_KEY` | Google Gemini API key |
+| `OPENAI_API_KEY` | OpenAI API key |
+| `OPENROUTER_API_KEY`| OpenRouter API key |
 
 ---
 
-## x402 Micropayments
+## x402 Micropayments Integration
 
-Larp implements the **x402 micropayment protocol**:
-- Each API call is treated as a paid service (e.g., 0.0008 USDC per LLM call)
-- The agent wallet intercepts HTTP 402 responses, constructs a payment header, and retries
-- Without `AGENT_WALLET_PRIVATE_KEY`, payments run in **simulation mode** — the pipeline executes normally and generates mock transaction receipts
+Larp implements a real-world **x402 micropayment protocol** over the Algorand Testnet.
 
----
+1. **The Challenge**: Before executing an agent step (e.g., Planner), the pipeline hits a resource endpoint. The server responds with `402 Payment Required` and a challenge detailing the required USDC amount and destination (`AVM_ADDRESS`).
+2. **The Payment**: The `AlgorandX402PaymentService` uses the `ALGORAND_AGENT_MNEMONIC` to sign a real transaction on the Algorand Testnet, transferring USDC (ASA `10458941`) to the merchant.
+3. **Verification**: The transaction ID is used as proof of payment to satisfy the 402 challenge and execute the agent step.
+
+You can view these real transactions live on [Lora Explorer](https://lora.algokit.io/) by tracking the agent or merchant wallet addresses.
 
 ## Project Structure
 
