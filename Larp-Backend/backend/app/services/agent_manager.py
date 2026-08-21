@@ -1,4 +1,6 @@
-"""AgentManager orchestrating multi-agent pipelines with execution logging (Execution Time, Cost, Errors, Status)."""
+"""AgentManager orchestrating multi-agent pipelines with execution logging (Execution Time, Cost, Errors, Status).
+
+Integrates x402 Algorand Testnet USDC payments via AlgorandX402PaymentService."""
 
 import time
 import traceback
@@ -24,6 +26,7 @@ from app.repositories.research_job_repository import ResearchJobRepository
 from app.repositories.research_report_repository import ResearchReportRepository
 from app.repositories.research_source_repository import ResearchSourceRepository
 from app.utils.resilience import execute_with_resilience
+from app.services.algorand_x402 import AlgorandX402PaymentService
 
 logger = get_logger("agent_manager")
 
@@ -208,16 +211,22 @@ class AgentManager:
     ) -> FinalReportOutput:
         """Execute multi-agent pipeline recording Execution Time, Cost, Errors, and Status logs per step."""
         start_time = time.perf_counter()
+        
+        # Initialize x402 Algorand payment service
+        payment_svc = AlgorandX402PaymentService()
         logger.info(
-            "AgentManager: Starting resilient research pipeline with execution logging",
+            "AgentManager: Starting resilient research pipeline with x402 payments",
             job_id=str(job_id),
             user_id=str(user_id),
+            payment_mode="REAL" if not payment_svc.is_simulation else "SIMULATION",
         )
 
         try:
             # ── Step 1: Planner Agent ─────────────────────────────────
             step1_start = time.perf_counter()
             await self._update_job_progress(job_id, "in_progress", "PlannerAgent", 15.0, start_time)
+            receipt1 = await payment_svc.pay_for_step("PlannerAgent", 0.0008)
+            logger.info(f"[x402] PlannerAgent payment: {receipt1.tx_hash} ({receipt1.explorer_url})")
             plan = await self.call_planner(query, depth)
             step1_ms = int((time.perf_counter() - step1_start) * 1000)
             await self._log_step(
@@ -229,6 +238,8 @@ class AgentManager:
             # ── Step 2: Search Agent ──────────────────────────────────
             step2_start = time.perf_counter()
             await self._update_job_progress(job_id, "in_progress", "SearchAgent", 40.0, start_time)
+            receipt2 = await payment_svc.pay_for_step("SearchAgent", 0.0015)
+            logger.info(f"[x402] SearchAgent payment: {receipt2.tx_hash} ({receipt2.explorer_url})")
             raw_sources = await self.call_search(plan.sub_queries)
             step2_ms = int((time.perf_counter() - step2_start) * 1000)
             await self._log_step(
@@ -257,6 +268,8 @@ class AgentManager:
             # ── Step 3: Fact Checker Agent ────────────────────────────
             step3_start = time.perf_counter()
             await self._update_job_progress(job_id, "in_progress", "FactCheckerAgent", 65.0, start_time)
+            receipt3 = await payment_svc.pay_for_step("FactCheckerAgent", 0.0012)
+            logger.info(f"[x402] FactCheckerAgent payment: {receipt3.tx_hash} ({receipt3.explorer_url})")
             verified_facts = await self.call_fact_checker(raw_sources)
             step3_ms = int((time.perf_counter() - step3_start) * 1000)
             await self._log_step(
@@ -268,6 +281,8 @@ class AgentManager:
             # ── Step 4: Citation Agent ────────────────────────────────
             step4_start = time.perf_counter()
             await self._update_job_progress(job_id, "in_progress", "CitationAgent", 80.0, start_time)
+            receipt4 = await payment_svc.pay_for_step("CitationAgent", 0.0005)
+            logger.info(f"[x402] CitationAgent payment: {receipt4.tx_hash} ({receipt4.explorer_url})")
             citations = await self.call_citation_generator(verified_facts)
             step4_ms = int((time.perf_counter() - step4_start) * 1000)
             await self._log_step(
@@ -279,6 +294,8 @@ class AgentManager:
             # ── Step 5: Report Generator ──────────────────────────────
             step5_start = time.perf_counter()
             await self._update_job_progress(job_id, "in_progress", "ReportAgent", 95.0, start_time)
+            receipt5 = await payment_svc.pay_for_step("ReportAgent", 0.0025)
+            logger.info(f"[x402] ReportAgent payment: {receipt5.tx_hash} ({receipt5.explorer_url})")
             final_report = await self.call_report_generator(query, plan, verified_facts, citations)
             step5_ms = int((time.perf_counter() - step5_start) * 1000)
             await self._log_step(
@@ -328,7 +345,9 @@ class AgentManager:
                 "AgentManager: Resilient pipeline completed successfully",
                 job_id=str(job_id),
                 elapsed_ms=elapsed_ms,
-                total_cost_usd=0.0065,
+                total_cost_usd=payment_svc.total_cost,
+                payment_mode="REAL" if not payment_svc.is_simulation else "SIMULATION",
+                total_payments=len(payment_svc.receipts),
             )
             return final_report
 
