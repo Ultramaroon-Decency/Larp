@@ -1,3 +1,4 @@
+// src/components/UpgradeModal.tsx
 import React from 'react';
 
 interface UpgradeModalProps {
@@ -12,57 +13,57 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({ isOpen, onClose }) =
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
+        className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
         onClick={onClose}
       />
 
       {/* Modal Dialog */}
-      <div className="relative bg-white rounded-xl border border-[#C6C6CD] shadow-2xl max-w-lg w-full p-6 z-10 space-y-6">
+      <div className="relative bg-[#0D1626] rounded-xl border border-[#1B2536] shadow-2xl max-w-md w-full p-6 z-10 space-y-6 text-[#E5E7EB] animate-fade-in-down">
         <div className="flex justify-between items-start">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-full bg-[#0F172A] text-white flex items-center justify-center">
-              <span className="material-symbols-outlined text-[20px]">bolt</span>
+            <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/25 text-primary flex items-center justify-center">
+              <span className="material-symbols-outlined text-[18px]">bolt</span>
             </div>
             <div>
-              <h3 className="text-[20px] font-bold text-[#0F172A]">Upgrade Plan</h3>
-              <p className="text-[12px] font-bold uppercase tracking-wider text-[#45464D]">Academic Lab Tier</p>
+              <h3 className="text-[16px] font-bold text-white leading-none">Upgrade Plan</h3>
+              <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 mt-1">Academic Lab Tier</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-[#45464D] hover:text-[#0F172A] p-1 rounded-full hover:bg-[#E0E3E5]"
+            className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-900 outline-none"
           >
-            <span className="material-symbols-outlined">close</span>
+            <span className="material-symbols-outlined text-[18px]">close</span>
           </button>
         </div>
 
-        <div className="space-y-3">
-          <div className="p-4 rounded-lg bg-[#F8FAFC] border border-[#C6C6CD] space-y-2">
+        <div className="space-y-4">
+          <div className="p-4 rounded-xl bg-[#070B13] border border-[#1B2536] space-y-2">
             <div className="flex justify-between items-center">
-              <span className="font-bold text-[16px] text-[#0F172A]">Institutional Research Pro</span>
-              <span className="text-[18px] font-bold text-[#0F172A]">$29 <span className="text-[12px] font-normal text-[#45464D]">/ month</span></span>
+              <span className="font-semibold text-[14px] text-white">Research Pro</span>
+              <span className="text-[16px] font-bold text-white">$29 <span className="text-[11px] font-normal text-zinc-500">/ mo</span></span>
             </div>
-            <p className="text-[13px] text-[#45464D]">
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
               Designed for individual scholars, university researchers, and lab directors.
             </p>
           </div>
 
-          <ul className="space-y-2 text-[14px] text-[#191C1E] pt-2">
+          <ul className="space-y-2.5 text-[13px] text-zinc-300 pt-1">
             <li className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-[#2563EB] text-[18px]">check_circle</span>
-              Unlimited Gemini 3.6 Deep Dive literature syntheses
+              <span className="material-symbols-outlined text-primary text-[16px]">check_circle</span>
+              Unlimited Deep Dive literature syntheses
             </li>
             <li className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-[#2563EB] text-[18px]">check_circle</span>
-              Real-time Google Search grounding & DOI indexing
+              <span className="material-symbols-outlined text-primary text-[16px]">check_circle</span>
+              Real-time Google Search grounding
             </li>
             <li className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-[#2563EB] text-[18px]">check_circle</span>
-              BibTeX, Zotero, and RIS automated citation exporter
+              <span className="material-symbols-outlined text-primary text-[16px]">check_circle</span>
+              BibTeX Zotero citation exporter
             </li>
             <li className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-[#2563EB] text-[18px]">check_circle</span>
-              PDF, CSV & JSON dataset knowledge base attachments
+              <span className="material-symbols-outlined text-primary text-[16px]">check_circle</span>
+              PDF, CSV & JSON reference uploads
             </li>
           </ul>
         </div>
@@ -70,7 +71,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({ isOpen, onClose }) =
         <div className="flex gap-3 pt-2">
           <button
             onClick={onClose}
-            className="flex-1 py-2.5 px-4 rounded-md border border-[#C6C6CD] text-[#0F172A] font-bold text-[13px] uppercase tracking-wider hover:bg-[#E0E3E5] transition-colors"
+            className="flex-1 py-2 px-3 rounded-lg border border-[#1B2536] hover:border-zinc-700 text-zinc-300 hover:text-white font-bold text-[11px] uppercase tracking-wider transition-colors outline-none cursor-pointer"
           >
             Maybe Later
           </button>
@@ -79,7 +80,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({ isOpen, onClose }) =
               alert('Plan upgraded successfully! Welcome to Research Lab Pro.');
               onClose();
             }}
-            className="flex-1 py-2.5 px-4 rounded-md bg-[#0F172A] text-white font-bold text-[13px] uppercase tracking-wider hover:bg-slate-800 transition-colors shadow-sm"
+            className="flex-1 py-2 px-3 rounded-lg bg-primary text-white hover:bg-blue-600 font-bold text-[11px] uppercase tracking-wider transition-colors shadow-md outline-none cursor-pointer"
           >
             Upgrade Now
           </button>

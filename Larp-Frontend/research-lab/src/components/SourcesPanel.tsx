@@ -1,3 +1,4 @@
+// src/components/SourcesPanel.tsx
 import React, { useState } from 'react';
 import { Source } from '../types';
 
@@ -32,19 +33,19 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
   };
 
   const panelBody = (
-    <>
+    <div className="flex flex-col h-full bg-[#0D1626] border-l border-[#1B2536] text-[#E5E7EB]">
       {/* Panel Header */}
-      <div className="p-4 border-b border-[#C6C6CD] flex items-center justify-between bg-[#F7F9FB] shrink-0">
+      <div className="p-4 border-b border-[#1B2536] flex items-center justify-between bg-black/10 shrink-0">
         <div className="flex items-center gap-2">
-          <h3 className="font-bold text-[18px] text-[#0F172A]">Sources & Citations</h3>
-          <span className="text-[11px] font-bold bg-[#E0E3E5] px-2 py-0.5 rounded-full text-[#45464D]">
+          <h3 className="font-bold text-[14px] text-white">Sources</h3>
+          <span className="text-[10px] font-bold bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full text-primary">
             {sources.length}
           </span>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={handleBibliographyClick}
-            className="text-[#45464D] hover:text-[#0F172A] text-[12px] font-bold uppercase tracking-wider transition-colors flex items-center gap-1 cursor-pointer"
+            className="text-zinc-400 hover:text-white p-1 transition-colors flex items-center justify-center outline-none cursor-pointer"
             title="Full Bibliography View"
           >
             <span className="material-symbols-outlined text-[18px]">filter_list</span>
@@ -52,21 +53,21 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
           {onCloseMobile && (
             <button
               onClick={onCloseMobile}
-              className="md:hidden text-[#45464D] hover:text-[#0F172A] p-1 rounded-md hover:bg-[#E0E3E5] transition-colors cursor-pointer"
+              className="md:hidden text-zinc-400 hover:text-white p-1 rounded-md hover:bg-zinc-900 transition-colors cursor-pointer outline-none"
               title="Close Sources"
             >
-              <span className="material-symbols-outlined text-[20px]">close</span>
+              <span className="material-symbols-outlined text-[18px]">close</span>
             </button>
           )}
         </div>
       </div>
 
       {/* Sources Scroll Area */}
-      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+      <div className="flex-1 overflow-y-auto p-3.5 flex flex-col gap-3">
         {filteredSources.length === 0 && (
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-[#76777D]">
-            <span className="material-symbols-outlined text-[36px] mb-2">auto_stories</span>
-            <p className="text-[13px] font-medium">
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-zinc-500">
+            <span className="material-symbols-outlined text-[28px] mb-1">auto_stories</span>
+            <p className="text-[12px]">
               {sources.length === 0
                 ? 'Sources will appear here after synthesis completes.'
                 : 'No sources match the selected tag.'}
@@ -74,7 +75,7 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
             {filterTag && (
               <button
                 onClick={() => setFilterTag(null)}
-                className="mt-2 text-[12px] text-[#2563EB] hover:underline"
+                className="mt-2 text-[11px] text-primary hover:underline outline-none"
               >
                 Clear filter
               </button>
@@ -90,41 +91,41 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
               key={source.id}
               onMouseEnter={() => onSourceHover(source.index)}
               onMouseLeave={() => onSourceHover(null)}
-              className={`bg-white border rounded-md p-4 flex flex-col gap-2 transition-all cursor-pointer group shadow-2xs ${
+              className={`border rounded-xl p-3.5 flex flex-col gap-2 transition-all cursor-pointer group shadow-2xs ${
                 isHighlighted
-                  ? 'border-[#0F172A] ring-2 ring-[#0F172A]/20 bg-[#EFF6FF]'
-                  : 'border-[#C6C6CD] hover:border-[#0F172A]'
+                  ? 'border-primary bg-[#131E35] ring-2 ring-primary/10'
+                  : 'border-[#1B2536] bg-[#070B13] hover:border-zinc-700'
               }`}
             >
               {/* Header: Index badge and Relevance score */}
               <div className="flex justify-between items-start">
-                <span className="inline-flex items-center justify-center bg-[#0F172A] text-white rounded-md px-2 py-0.5 text-[12px] font-bold font-mono">
+                <span className="inline-flex items-center justify-center bg-primary text-white rounded px-1.5 py-0.5 text-[10px] font-bold font-mono">
                   [{source.index}]
                 </span>
-                <span className="font-mono text-[11px] font-bold text-[#45464D] group-hover:text-[#0F172A] transition-colors">
+                <span className="font-mono text-[9px] font-semibold text-zinc-500 group-hover:text-primary transition-colors">
                   Relevance: {(typeof source.relevance === 'number' && !isNaN(source.relevance) ? source.relevance : 0).toFixed(2)}
                 </span>
               </div>
 
               {/* Title */}
-              <h4 className="font-bold text-[15px] text-[#0F172A] leading-snug group-hover:text-[#2563EB] transition-colors">
+              <h4 className="font-semibold text-[13px] text-white leading-snug group-hover:text-primary transition-colors line-clamp-2">
                 {source.title}
               </h4>
 
               {/* Journal / Date */}
-              <p className="text-[13px] text-[#45464D]">
+              <p className="text-[11px] text-zinc-400 truncate">
                 {source.journal}
               </p>
 
               {/* Abstract Preview if available */}
               {source.abstract && (
-                <p className="text-[12px] text-[#76777D] line-clamp-2 italic">
+                <p className="text-[10px] text-zinc-500 line-clamp-2 italic leading-relaxed">
                   &ldquo;{source.abstract}&rdquo;
                 </p>
               )}
 
               {/* Tags & Action links */}
-              <div className="mt-2 flex flex-wrap gap-1.5 items-center">
+              <div className="mt-1 flex flex-wrap gap-1 items-center">
                 {(source.tags || []).map((tag) => (
                   <span
                     key={tag}
@@ -132,8 +133,8 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
                       e.stopPropagation();
                       setFilterTag(filterTag === tag ? null : tag);
                     }}
-                    className={`border border-[#C6C6CD] rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#45464D] transition-colors cursor-pointer ${
-                      filterTag === tag ? 'bg-[#0F172A] text-white' : 'hover:bg-[#E0E3E5]'
+                    className={`border border-[#1B2536] rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-zinc-400 transition-colors cursor-pointer select-none ${
+                      filterTag === tag ? 'bg-primary text-white border-primary' : 'hover:bg-zinc-800'
                     }`}
                   >
                     {tag}
@@ -145,10 +146,10 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
                     target="_blank"
                     rel="noreferrer"
                     onClick={(e) => e.stopPropagation()}
-                    className="ml-auto text-[#2563EB] hover:underline text-[11px] font-medium flex items-center gap-0.5"
+                    className="ml-auto text-primary hover:underline text-[10px] font-medium flex items-center gap-0.5"
                   >
                     View
-                    <span className="material-symbols-outlined text-[12px]">open_in_new</span>
+                    <span className="material-symbols-outlined text-[10px]">open_in_new</span>
                   </a>
                 )}
               </div>
@@ -159,19 +160,19 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
         {/* View Full Bibliography CTA */}
         <button
           onClick={handleBibliographyClick}
-          className="w-full py-2.5 border border-[#C6C6CD] rounded-md text-[12px] font-bold uppercase tracking-wider text-[#0F172A] hover:bg-[#E0E3E5] transition-colors flex items-center justify-center gap-2 mt-2 cursor-pointer"
+          className="w-full py-2 border border-[#1B2536] hover:border-zinc-700 bg-zinc-900 rounded-lg text-[11px] font-bold uppercase tracking-wider text-zinc-300 hover:text-white transition-all flex items-center justify-center gap-2 mt-2 cursor-pointer outline-none"
         >
-          <span className="material-symbols-outlined text-[16px]">book</span>
+          <span className="material-symbols-outlined text-[14px]">book</span>
           Open Bibliography Page
         </button>
       </div>
-    </>
+    </div>
   );
 
   return (
     <>
       {/* Desktop Rail */}
-      <aside className="w-[300px] h-full bg-[#F2F4F6] border-l border-[#C6C6CD] flex flex-col shrink-0 hidden md:flex">
+      <aside className="w-[280px] h-full flex flex-col shrink-0 hidden md:flex">
         {panelBody}
       </aside>
 
@@ -179,10 +180,10 @@ export const SourcesPanel: React.FC<SourcesPanelProps> = ({
       {isOpenMobile && (
         <div className="fixed inset-0 z-50 md:hidden flex justify-end">
           <div
-            className="fixed inset-0 bg-black/40 backdrop-blur-xs"
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs"
             onClick={onCloseMobile}
           />
-          <aside className="relative w-[320px] max-w-[85vw] h-full bg-[#F2F4F6] border-l border-[#C6C6CD] flex flex-col z-10 shadow-2xl">
+          <aside className="relative w-[300px] max-w-[85vw] h-full flex flex-col z-10 shadow-2xl">
             {panelBody}
           </aside>
         </div>

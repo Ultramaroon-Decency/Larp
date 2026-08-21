@@ -1,3 +1,4 @@
+// src/components/SettingsView.tsx
 import React, { useState, useEffect } from 'react';
 import { ResearchMode, PaymentReceipt } from '../types';
 
@@ -16,7 +17,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 }) => {
   const [citationFormat, setCitationFormat] = useState('IEEE');
   const [autoDownloadPdf, setAutoDownloadPdf] = useState(true);
-  const [themeMode, setThemeMode] = useState<'light' | 'dark' | 'system'>('light');
   const [globalLog, setGlobalLog] = useState<{
     mode: string;
     totalTransactions: number;
@@ -36,37 +36,38 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     .toFixed(4);
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 md:p-8 bg-[#F7F9FB]">
-      <div className="max-w-[840px] mx-auto space-y-8">
+    <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#090D16] text-[#E5E7EB]">
+      <div className="max-w-[760px] mx-auto space-y-8">
         {/* Header */}
-        <div className="border-b border-[#C6C6CD] pb-4">
-          <h2 className="text-[24px] font-bold text-[#0F172A]">Settings & Preferences</h2>
-          <p className="text-[14px] text-[#45464D] mt-0.5">
+        <div className="border-b border-[#1B2536] pb-4">
+          <h2 className="text-[20px] font-bold text-white">Settings & Preferences</h2>
+          <p className="text-[12px] text-zinc-400 mt-0.5">
             Configure default synthesis parameters, export formats, and institutional credentials.
           </p>
         </div>
 
         {/* Section 1: Research Parameters */}
-        <div className="bg-white border border-[#C6C6CD] rounded-lg p-6 space-y-6 shadow-2xs">
-          <h3 className="text-[16px] font-bold text-[#0F172A] border-b border-[#C6C6CD]/50 pb-2">
-            Synthesis & Vector Parameters
+        <div className="bg-[#0D1525] border border-[#1B2536] rounded-xl p-5 space-y-5 shadow-sm">
+          <h3 className="text-[14px] font-bold text-white border-b border-zinc-900 pb-2 flex items-center gap-2">
+            <span className="material-symbols-outlined text-[16px] text-primary">science</span>
+            Research Parameters
           </h3>
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h4 className="font-bold text-[15px] text-[#0F172A]">Default Research Mode</h4>
-              <p className="text-[13px] text-[#45464D] mt-0.5">
+              <h4 className="font-semibold text-[13px] text-white">Default Research Mode</h4>
+              <p className="text-[11px] text-zinc-400 mt-0.5">
                 Set whether new sessions default to Quick Scan or Deep Dive mode.
               </p>
             </div>
-            <div className="flex items-center bg-[#F2F4F6] rounded-md p-1 border border-[#C6C6CD]">
+            <div className="flex items-center bg-[#070B13] rounded-lg p-0.5 border border-[#1B2536] shrink-0">
               <button
                 type="button"
                 onClick={() => setDefaultMode('quick')}
-                className={`px-3 py-1.5 rounded-md text-[11px] font-bold tracking-wider uppercase cursor-pointer ${
+                className={`px-3 py-1.5 rounded-md text-[10px] font-bold tracking-wider uppercase cursor-pointer outline-none transition-all ${
                   defaultMode === 'quick'
-                    ? 'bg-white border border-[#C6C6CD] shadow-xs text-[#0F172A]'
-                    : 'text-[#45464D]'
+                    ? 'bg-[#172237] text-white shadow-xs'
+                    : 'text-zinc-400 hover:text-white'
                 }`}
               >
                 Quick Scan
@@ -74,10 +75,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <button
                 type="button"
                 onClick={() => setDefaultMode('deep')}
-                className={`px-3 py-1.5 rounded-md text-[11px] font-bold tracking-wider uppercase cursor-pointer ${
+                className={`px-3 py-1.5 rounded-md text-[10px] font-bold tracking-wider uppercase cursor-pointer outline-none transition-all ${
                   defaultMode === 'deep'
-                    ? 'bg-white border border-[#C6C6CD] shadow-xs text-[#0F172A]'
-                    : 'text-[#45464D]'
+                    ? 'bg-[#172237] text-white shadow-xs'
+                    : 'text-zinc-400 hover:text-white'
                 }`}
               >
                 Deep Dive
@@ -85,17 +86,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-t border-[#C6C6CD]/40 pt-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-t border-zinc-900 pt-4">
             <div>
-              <h4 className="font-bold text-[15px] text-[#0F172A]">Citation Style Format</h4>
-              <p className="text-[13px] text-[#45464D] mt-0.5">
+              <h4 className="font-semibold text-[13px] text-white">Citation Style Format</h4>
+              <p className="text-[11px] text-zinc-400 mt-0.5">
                 Default export format for bibliography and references.
               </p>
             </div>
             <select
               value={citationFormat}
               onChange={(e) => setCitationFormat(e.target.value)}
-              className="bg-white border border-[#C6C6CD] rounded-md px-3 py-1.5 text-[14px] font-medium text-[#0F172A] focus:outline-none focus:border-[#0F172A]"
+              className="bg-[#070B13] border border-[#1B2536] rounded-lg px-3 py-1.5 text-[12px] font-medium text-white focus:outline-none focus:border-primary shrink-0"
             >
               <option value="IEEE">IEEE Style [1]</option>
               <option value="APA">APA 7th Edition</option>
@@ -104,10 +105,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </select>
           </div>
 
-          <div className="flex items-center justify-between border-t border-[#C6C6CD]/40 pt-4">
+          <div className="flex items-center justify-between border-t border-zinc-900 pt-4">
             <div>
-              <h4 className="font-bold text-[15px] text-[#0F172A]">Auto-Cache Reference PDFs</h4>
-              <p className="text-[13px] text-[#45464D] mt-0.5">
+              <h4 className="font-semibold text-[13px] text-white">Auto-Cache Reference PDFs</h4>
+              <p className="text-[11px] text-zinc-400 mt-0.5">
                 Automatically download and index open-access PDF attachments.
               </p>
             </div>
@@ -115,51 +116,58 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               type="checkbox"
               checked={autoDownloadPdf}
               onChange={(e) => setAutoDownloadPdf(e.target.checked)}
-              className="w-5 h-5 accent-[#0F172A] cursor-pointer"
+              className="w-4 h-4 bg-[#070B13] border-[#1B2536] rounded text-primary focus:ring-primary accent-primary cursor-pointer shrink-0"
             />
           </div>
         </div>
 
         {/* Section 2: Account & License */}
-        <div className="bg-white border border-[#C6C6CD] rounded-lg p-6 space-y-4 shadow-2xs">
+        <div className="bg-[#0D1525] border border-[#1B2536] rounded-xl p-5 space-y-4 shadow-sm">
           <div className="flex justify-between items-start">
             <div>
-              <h3 className="text-[16px] font-bold text-[#0F172A]">Institutional Subscription</h3>
-              <p className="text-[13px] text-[#45464D] mt-1">
+              <h3 className="text-[14px] font-bold text-white flex items-center gap-2">
+                <span className="material-symbols-outlined text-[16px] text-primary">badge</span>
+                Institutional Subscription
+              </h3>
+              <p className="text-[11px] text-zinc-400 mt-1">
                 Academic Tier • Research Lab Pro (Active)
               </p>
             </div>
-            <span className="bg-emerald-100 text-emerald-800 text-[11px] font-bold px-2.5 py-1 rounded border border-emerald-200 uppercase tracking-wider">
+            <span className="bg-emerald-500/10 text-emerald-400 text-[9px] font-bold px-2 py-0.5 rounded-md border border-emerald-500/20 uppercase tracking-wider">
               Active Plan
             </span>
           </div>
 
-          <div className="border-t border-[#C6C6CD]/40 pt-4 flex items-center justify-between">
-            <span className="text-[13px] text-[#45464D]">
+          <div className="border-t border-zinc-900 pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <span className="text-[11px] text-zinc-400">
               Unlimited Groq / Tavily Search &amp; BibTeX Exports Enabled
             </span>
             <button
               type="button"
               onClick={onUpgradeClick}
-              className="px-4 py-2 border border-[#0F172A] bg-[#0F172A] text-white text-[12px] font-bold uppercase tracking-wider rounded-md hover:bg-slate-800 transition-colors"
+              className="px-3.5 py-2 bg-primary text-white hover:bg-blue-600 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors outline-none cursor-pointer"
             >
               Manage Subscription
             </button>
           </div>
         </div>
+
         {/* Section 3: Payment Wallet (x402) */}
-        <div className="bg-white border border-[#C6C6CD] rounded-lg p-6 space-y-4 shadow-2xs">
-          <div className="flex items-start justify-between">
+        <div className="bg-[#0D1525] border border-[#1B2536] rounded-xl p-5 space-y-5 shadow-sm">
+          <div className="flex items-start justify-between border-b border-zinc-900 pb-3">
             <div>
-              <h3 className="text-[16px] font-bold text-[#0F172A]">x402 Payment Wallet</h3>
-              <p className="text-[13px] text-[#45464D] mt-1">
+              <h3 className="text-[14px] font-bold text-white flex items-center gap-2">
+                <span className="material-symbols-outlined text-[16px] text-primary">account_balance_wallet</span>
+                x402 Payment Wallet
+              </h3>
+              <p className="text-[11px] text-zinc-400 mt-1">
                 Autonomous USDC micropayments for each research pipeline step.
               </p>
             </div>
-            <span className={`text-[11px] font-bold px-2.5 py-1 rounded border uppercase tracking-wider ${
+            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-md border uppercase tracking-wider ${
               globalLog?.mode === 'real'
-                ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                : 'bg-blue-100 text-blue-800 border-blue-200'
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                : 'bg-primary/10 text-primary border-primary/20'
             }`}>
               {globalLog?.mode === 'real' ? 'Live' : 'Simulation'}
             </span>
@@ -167,40 +175,40 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
           {/* Stats row */}
           <div className="grid grid-cols-3 gap-3">
-            <div className="bg-[#F2F4F6] rounded-md p-3 text-center border border-[#E0E3E5]">
-              <div className="font-mono font-bold text-[18px] text-[#0F172A]">
+            <div className="bg-[#070B13] rounded-xl p-3 text-center border border-[#1B2536]">
+              <div className="font-mono font-bold text-[16px] text-primary">
                 ${sessionTotal}
               </div>
-              <div className="text-[11px] text-[#45464D] uppercase tracking-wider mt-0.5">Session Spent</div>
+              <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mt-0.5">Session Spent</div>
             </div>
-            <div className="bg-[#F2F4F6] rounded-md p-3 text-center border border-[#E0E3E5]">
-              <div className="font-mono font-bold text-[18px] text-[#0F172A]">
+            <div className="bg-[#070B13] rounded-xl p-3 text-center border border-[#1B2536]">
+              <div className="font-mono font-bold text-[16px] text-white">
                 {globalLog?.totalTransactions ?? 0}
               </div>
-              <div className="text-[11px] text-[#45464D] uppercase tracking-wider mt-0.5">Total TXs</div>
+              <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mt-0.5">Total TXs</div>
             </div>
-            <div className="bg-[#F2F4F6] rounded-md p-3 text-center border border-[#E0E3E5]">
-              <div className="font-mono font-bold text-[18px] text-[#0F172A]">
+            <div className="bg-[#070B13] rounded-xl p-3 text-center border border-[#1B2536]">
+              <div className="font-mono font-bold text-[16px] text-emerald-400">
                 ${globalLog?.totalSpentUSDC ?? '0.0000'}
               </div>
-              <div className="text-[11px] text-[#45464D] uppercase tracking-wider mt-0.5">All-time USDC</div>
+              <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold mt-0.5">All-time USDC</div>
             </div>
           </div>
 
           {/* Current session receipts */}
           {livePayments.length > 0 && (
-            <div className="border-t border-[#C6C6CD]/40 pt-4">
-              <h4 className="font-bold text-[13px] text-[#0F172A] mb-2 uppercase tracking-wider">Current Session Receipts</h4>
-              <div className="space-y-1.5 max-h-[180px] overflow-y-auto">
+            <div className="border-t border-zinc-900 pt-4">
+              <h4 className="font-bold text-[11px] text-zinc-400 mb-2.5 uppercase tracking-wider">Current Session Receipts</h4>
+              <div className="space-y-2 max-h-[180px] overflow-y-auto pr-0.5">
                 {livePayments.map((receipt, i) => (
-                  <div key={i} className="flex items-center justify-between bg-[#F7F9FB] border border-[#E0E3E5] rounded px-3 py-2">
+                  <div key={i} className="flex items-center justify-between bg-[#070B13] border border-[#1B2536] rounded-xl px-3 py-2">
                     <div className="min-w-0">
-                      <div className="font-bold text-[12px] text-[#0F172A] truncate">{receipt.stepName}</div>
-                      <div className="font-mono text-[10px] text-[#76777D] truncate">{receipt.txHash.substring(0, 22)}...</div>
+                      <div className="font-semibold text-[12px] text-white truncate">{receipt.stepName}</div>
+                      <div className="font-mono text-[9px] text-zinc-500 truncate mt-0.5">{receipt.txHash}</div>
                     </div>
                     <div className="text-right shrink-0 ml-3">
-                      <div className="font-mono font-bold text-[13px] text-emerald-700">{receipt.amount} USDC</div>
-                      <div className="text-[10px] text-[#76777D]">{receipt.currency} · {receipt.network.split(' ')[0]}</div>
+                      <div className="font-mono font-bold text-[12px] text-emerald-400">{receipt.amount} USDC</div>
+                      <div className="text-[9px] text-zinc-500 mt-0.5">{receipt.currency} · {receipt.network.split(' ')[0]}</div>
                     </div>
                   </div>
                 ))}
@@ -209,12 +217,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           )}
 
           {livePayments.length === 0 && (
-            <p className="text-[13px] text-[#76777D] italic text-center py-2">
+            <p className="text-[12px] text-zinc-500 italic text-center py-2">
               No payments yet. Run a research query to see x402 payment receipts here.
             </p>
           )}
         </div>
-
       </div>
     </div>
   );

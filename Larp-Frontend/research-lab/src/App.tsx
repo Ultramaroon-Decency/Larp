@@ -475,6 +475,8 @@ export default function App() {
         setIsOpenMobile={setIsOpenMobileMenu}
         onUpgradeClick={() => setIsUpgradeModalOpen(true)}
         onNewResearchClick={handleNewResearchClick}
+        projects={projects}
+        onSelectProject={handleSelectProject}
       />
 
       {/* Main Screen Container */}
