@@ -25,66 +25,60 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
   );
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 md:p-8 bg-[#F7F9FB]">
-      <div className="max-w-[840px] mx-auto space-y-6">
-        <div className="flex items-center justify-between border-b border-[#C6C6CD] pb-4">
+    <div className="flex-1 overflow-y-auto p-6 md:p-8 bg-[#18181B] text-[#F4F4F5]">
+      <div className="max-w-[760px] mx-auto space-y-6">
+        <div className="flex items-center justify-between pb-4">
           <div>
-            <h2 className="text-[24px] font-bold text-[#0F172A]">Research History</h2>
-            <p className="text-[14px] text-[#45464D] mt-0.5">
-              Review and resume past academic research protocols and synthesis threads.
-            </p>
+            <h2 className="text-[24px] font-bold tracking-tight">Research History</h2>
           </div>
-          <span className="text-[12px] font-bold bg-[#E0E3E5] px-3 py-1 rounded-full text-[#0F172A]">
-            {filtered.length} Threads
+          <span className="text-[11px] font-bold bg-[#27272A] px-3 py-1 rounded-full text-[#A1A1AA]">
+            {filtered.length} Sessions
           </span>
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-1">
           {filtered.length === 0 ? (
-            <div className="text-center py-12 bg-white rounded-lg border border-[#C6C6CD] p-8">
-              <span className="material-symbols-outlined text-[36px] text-[#76777D] mb-2">
+            <div className="text-center py-12">
+              <span className="material-symbols-outlined text-[32px] text-[#3F3F46] mb-2">
                 history
               </span>
-              <p className="text-[#45464D] font-medium text-[15px]">No research history matches your query.</p>
+              <p className="text-[#A1A1AA] text-[14px]">No research history matches your query.</p>
             </div>
           ) : (
             filtered.map((p) => (
               <div
                 key={p.id}
                 onClick={() => onSelectProject(p)}
-                className="bg-white border border-[#C6C6CD] rounded-lg p-5 hover:border-[#0F172A] transition-all cursor-pointer group flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-2xs"
+                className="group flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl hover:bg-[#27272A] transition-colors cursor-pointer"
               >
                 <div className="space-y-1 min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#003EA8] bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
-                      {p.category}
-                    </span>
-                    <span className="text-[12px] text-[#76777D] font-mono">• {p.dateLabel}</span>
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#45464D]">
-                      ({p.mode === 'deep' ? 'Deep Dive' : 'Quick Scan'})
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[12px] text-[#A1A1AA] font-mono">{p.dateLabel}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#76777D] bg-[#27272A] px-1.5 py-0.5 rounded">
+                      {p.mode === 'deep' ? 'Deep Dive' : 'Quick Scan'}
                     </span>
                   </div>
-                  <h3 className="font-bold text-[17px] text-[#0F172A] group-hover:text-[#2563EB] transition-colors truncate">
+                  <h3 className="font-medium text-[15px] text-[#F4F4F5] truncate">
                     {p.title}
                   </h3>
-                  <p className="text-[14px] text-[#45464D] line-clamp-1 italic">
-                    "{p.query}"
+                  <p className="text-[13px] text-[#A1A1AA] line-clamp-1">
+                    {p.query}
                   </p>
                 </div>
 
-                <div className="flex items-center gap-3 shrink-0 self-end md:self-center">
+                <div className="flex items-center gap-2 shrink-0 md:opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       onToggleStar(p.id);
                     }}
-                    className={`p-1.5 rounded-full hover:bg-[#E0E3E5] transition-colors ${
-                      p.isStarred ? 'text-amber-500' : 'text-[#76777D]'
+                    className={`p-2 rounded-lg hover:bg-[#3F3F46] transition-colors ${
+                      p.isStarred ? 'text-[#10B981]' : 'text-[#76777D]'
                     }`}
                     title={p.isStarred ? 'Unstar' : 'Star'}
                   >
-                    <span className={`material-symbols-outlined ${p.isStarred ? 'fill-1' : ''}`}>
+                    <span className={`material-symbols-outlined text-[18px] ${p.isStarred ? 'fill-1' : ''}`}>
                       star
                     </span>
                   </button>
@@ -95,22 +89,10 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                       e.stopPropagation();
                       onDeleteProject(p.id);
                     }}
-                    className="p-1.5 rounded-full text-[#76777D] hover:text-red-600 hover:bg-[#E0E3E5] transition-colors"
+                    className="p-2 rounded-lg text-[#76777D] hover:text-red-400 hover:bg-[#3F3F46] transition-colors"
                     title="Delete Thread"
                   >
-                    <span className="material-symbols-outlined">delete</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectProject(p);
-                    }}
-                    className="px-4 py-2 bg-[#0F172A] text-white font-bold text-[12px] uppercase tracking-wider rounded-md hover:bg-slate-800 transition-colors flex items-center gap-1"
-                  >
-                    Resume
-                    <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                    <span className="material-symbols-outlined text-[18px]">delete</span>
                   </button>
                 </div>
               </div>

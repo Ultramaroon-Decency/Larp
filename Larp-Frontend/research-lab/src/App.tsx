@@ -461,8 +461,8 @@ export default function App() {
     <div className="flex h-screen overflow-hidden bg-background text-on-background font-body-md text-body-md antialiased selection:bg-primary selection:text-on-primary">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-4 right-4 z-50 bg-[#0F172A] text-white text-[13px] font-medium px-4 py-2.5 rounded-md shadow-xl border border-slate-700 flex items-center gap-2 animate-fade-in-down">
-          <span className="material-symbols-outlined text-[18px] text-emerald-400">check_circle</span>
+        <div className="fixed top-4 right-4 z-50 bg-[#27272A] text-[#F4F4F5] text-[13px] font-medium px-4 py-2.5 rounded-md shadow-xl border border-[#3F3F46] flex items-center gap-2 animate-fade-in-down">
+          <span className="material-symbols-outlined text-[18px] text-[#10B981]">check_circle</span>
           {toastMessage}
         </div>
       )}
@@ -475,6 +475,9 @@ export default function App() {
         setIsOpenMobile={setIsOpenMobileMenu}
         onUpgradeClick={() => setIsUpgradeModalOpen(true)}
         onNewResearchClick={handleNewResearchClick}
+        projects={projects}
+        onSelectProject={handleSelectProject}
+        activeProjectId={activeProjectId}
       />
 
       {/* Main Screen Container */}

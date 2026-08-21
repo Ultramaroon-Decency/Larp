@@ -17,7 +17,6 @@ export const SavedLibraryView: React.FC<SavedLibraryViewProps> = ({
   searchQuery
 }) => {
   const [filter, setFilter] = useState<'all' | 'recent' | 'starred' | 'shared'>('all');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   const filteredProjects = projects.filter((p) => {
     const matchesSearch =
@@ -33,88 +32,33 @@ export const SavedLibraryView: React.FC<SavedLibraryViewProps> = ({
   });
 
   return (
-    <div className="flex-1 overflow-y-auto p-margin-page bg-surface">
-      <div className="max-w-container-max mx-auto space-y-8">
-        {/* Filters & View Mode Controls */}
-        <div className="flex flex-wrap gap-4 items-center justify-between">
+    <div className="flex-1 overflow-y-auto p-6 md:p-8 bg-[#18181B] text-[#F4F4F5]">
+      <div className="max-w-[760px] mx-auto space-y-8">
+        {/* Filters */}
+        <div className="flex flex-wrap gap-4 items-center justify-between pb-2">
           <div className="flex gap-2">
-            <button
-              onClick={() => setFilter('all')}
-              className={`px-4 py-1.5 text-citation font-citation rounded-DEFAULT border transition-colors cursor-pointer ${
-                filter === 'all'
-                  ? 'bg-primary text-on-primary border-primary'
-                  : 'bg-surface text-on-surface-variant border-outline-variant hover:bg-surface-variant'
-              }`}
-            >
-              All Projects
-            </button>
-            <button
-              onClick={() => setFilter('recent')}
-              className={`px-4 py-1.5 text-citation font-citation rounded-DEFAULT border transition-colors flex items-center gap-1.5 cursor-pointer ${
-                filter === 'recent'
-                  ? 'bg-primary text-on-primary border-primary'
-                  : 'bg-surface text-on-surface-variant border-outline-variant hover:bg-surface-variant'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[16px]">schedule</span>
-              Recent
-            </button>
-            <button
-              onClick={() => setFilter('starred')}
-              className={`px-4 py-1.5 text-citation font-citation rounded-DEFAULT border transition-colors flex items-center gap-1.5 cursor-pointer ${
-                filter === 'starred'
-                  ? 'bg-primary text-on-primary border-primary'
-                  : 'bg-surface text-on-surface-variant border-outline-variant hover:bg-surface-variant'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[16px]">star</span>
-              Starred
-            </button>
-            <button
-              onClick={() => setFilter('shared')}
-              className={`px-4 py-1.5 text-citation font-citation rounded-DEFAULT border transition-colors flex items-center gap-1.5 cursor-pointer ${
-                filter === 'shared'
-                  ? 'bg-primary text-on-primary border-primary'
-                  : 'bg-surface text-on-surface-variant border-outline-variant hover:bg-surface-variant'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[16px]">group</span>
-              Shared
-            </button>
-          </div>
-
-          <div className="flex gap-2 items-center">
-            <div className="h-8 border-l border-outline-variant mx-2" />
-            <button
-              onClick={() => setViewMode('grid')}
-              className={`p-1.5 rounded-DEFAULT transition-colors ${
-                viewMode === 'grid'
-                  ? 'bg-surface-variant text-primary hover:bg-outline-variant'
-                  : 'text-on-surface-variant hover:bg-surface-variant'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[20px]">grid_view</span>
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={`p-1.5 rounded-DEFAULT transition-colors ${
-                viewMode === 'list'
-                  ? 'bg-surface-variant text-primary hover:bg-outline-variant'
-                  : 'text-on-surface-variant hover:bg-surface-variant'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[20px]">view_list</span>
-            </button>
+            {(['all', 'recent', 'starred', 'shared'] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-3 py-1.5 rounded-lg transition-colors text-[13px] font-medium capitalize ${
+                  filter === f
+                    ? 'bg-[#27272A] text-[#F4F4F5]'
+                    : 'text-[#A1A1AA] hover:bg-[#27272A] hover:text-[#D4D4D8]'
+                }`}
+              >
+                {f}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Section: Collections (Bento Grid) */}
+        {/* Collections */}
         <section>
-          <h3 className="font-label-caps text-label-caps text-on-surface-variant mb-4 flex items-center gap-2">
-            <span className="material-symbols-outlined text-[16px]">folder</span>
+          <h3 className="text-[12px] font-bold tracking-wider text-[#76777D] uppercase mb-4 px-2">
             Collections
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {collections.map((col) => (
               <div
                 key={col.id}
@@ -122,88 +66,67 @@ export const SavedLibraryView: React.FC<SavedLibraryViewProps> = ({
                   const matched = projects.find((p) => col.projectIds.includes(p.id)) || projects[0];
                   if (matched) onOpenBibliography(matched);
                 }}
-                className="bg-surface-container-lowest border border-outline-variant rounded-lg p-5 hover:border-primary cursor-pointer transition-colors group relative overflow-hidden flex flex-col h-32"
+                className="bg-[#18181B] border border-[#27272A] rounded-xl p-4 hover:border-[#3F3F46] hover:bg-[#27272A] cursor-pointer transition-colors group flex items-center gap-4"
               >
-                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                  <span className="material-symbols-outlined text-[64px] text-primary">
+                <div className="w-10 h-10 rounded-lg bg-[#27272A] flex items-center justify-center text-[#10B981] group-hover:bg-[#3F3F46] transition-colors shrink-0">
+                  <span className="material-symbols-outlined text-[20px]">
                     {col.icon}
                   </span>
                 </div>
-                <div className="flex justify-between items-start mb-auto z-10">
-                  <h4 className="font-headline-md text-headline-md text-on-background group-hover:text-primary transition-colors truncate pr-4">
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-medium text-[14px] text-[#F4F4F5] truncate">
                     {col.title}
                   </h4>
-                  <button className="text-on-surface-variant hover:text-primary z-20">
-                    <span className="material-symbols-outlined text-[18px]">more_horiz</span>
-                  </button>
-                </div>
-                <div className="flex items-center gap-4 text-citation font-citation text-on-surface-variant z-10 mt-4">
-                  <span className="flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[14px]">description</span>
-                    {col.refsCount} refs
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[14px]">update</span>
-                    {col.updatedAgo}
-                  </span>
+                  <div className="flex items-center gap-3 text-[12px] text-[#A1A1AA] mt-0.5">
+                    <span>{col.refsCount} refs</span>
+                    <span>•</span>
+                    <span>{col.updatedAgo}</span>
+                  </div>
                 </div>
               </div>
             ))}
           </div>
         </section>
 
-        <div className="h-px bg-outline-variant w-full my-8" />
-
-        {/* Section: Recent Documents & Drafts */}
+        {/* Documents */}
         <section>
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="font-label-caps text-label-caps text-on-surface-variant flex items-center gap-2">
-              <span className="material-symbols-outlined text-[16px]">draft</span>
-              Recent Documents & Drafts
+          <div className="flex justify-between items-center mb-4 px-2">
+            <h3 className="text-[12px] font-bold tracking-wider text-[#76777D] uppercase">
+              Documents & Drafts
             </h3>
-            <span className="text-citation text-primary hover:underline cursor-pointer">
-              View All ({filteredProjects.length})
+            <span className="text-[12px] text-[#A1A1AA]">
+              {filteredProjects.length} items
             </span>
           </div>
 
-          <div className="flex flex-col border border-outline-variant rounded-lg bg-surface-container-lowest overflow-hidden">
+          <div className="flex flex-col gap-1">
             {filteredProjects.map((p) => {
               const isPdf = p.title.toLowerCase().endsWith('.pdf');
               const isChat = p.title.toLowerCase().startsWith('chat');
               const iconName = isPdf ? 'picture_as_pdf' : isChat ? 'chat' : 'article';
-              const badgeLabel = p.status === 'draft' ? 'Draft' : isPdf ? 'Source' : 'Session';
 
               return (
                 <div
                   key={p.id}
                   onClick={() => onSelectProject(p)}
-                  className="flex items-center p-4 border-b border-outline-variant hover:bg-surface-variant/30 transition-colors cursor-pointer group"
+                  className="flex items-center p-3 rounded-xl hover:bg-[#27272A] transition-colors cursor-pointer group"
                 >
-                  <div className="mr-4 text-on-surface-variant group-hover:text-primary transition-colors">
-                    <span className="material-symbols-outlined" style={!isPdf && !isChat ? { fontVariationSettings: "'FILL' 1" } : {}}>
+                  <div className="mr-4 text-[#76777D] group-hover:text-[#F4F4F5] transition-colors shrink-0">
+                    <span className="material-symbols-outlined text-[20px]" style={!isPdf && !isChat ? { fontVariationSettings: "'FILL' 1" } : {}}>
                       {iconName}
                     </span>
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <h4 className="font-body-lg text-body-lg text-on-background font-medium truncate">
+                    <h4 className="text-[14px] font-medium text-[#F4F4F5] truncate">
                       {p.title}
                     </h4>
-                    <p className="text-citation font-citation text-on-surface-variant truncate">
+                    <p className="text-[13px] text-[#A1A1AA] truncate">
                       {p.description}
                     </p>
                   </div>
 
-                  <div className="hidden sm:flex items-center gap-3 ml-4 text-citation text-on-surface-variant">
-                    <span
-                      className={`px-2 py-0.5 rounded-DEFAULT border ${
-                        p.status === 'draft' || isChat
-                          ? 'bg-[#EFF6FF] text-primary border-[#EFF6FF]'
-                          : 'bg-surface-variant text-on-surface border-outline-variant'
-                      }`}
-                    >
-                      {badgeLabel}
-                    </span>
+                  <div className="hidden sm:flex items-center gap-3 ml-4 text-[12px] text-[#76777D] shrink-0">
                     <span>{p.dateLabel}</span>
                   </div>
 
@@ -213,10 +136,10 @@ export const SavedLibraryView: React.FC<SavedLibraryViewProps> = ({
                       e.stopPropagation();
                       onOpenBibliography(p);
                     }}
-                    className="ml-4 text-on-surface-variant hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity"
-                    title="View Sources & Citations"
+                    className="ml-4 p-2 rounded-lg text-[#76777D] hover:text-[#10B981] hover:bg-[#3F3F46] opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                    title="View Sources"
                   >
-                    <span className="material-symbols-outlined">download</span>
+                    <span className="material-symbols-outlined text-[18px]">download</span>
                   </button>
                 </div>
               );

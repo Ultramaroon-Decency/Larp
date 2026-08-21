@@ -39,22 +39,52 @@ export const NewResearchView: React.FC<NewResearchViewProps> = ({ onSynthesize }
   };
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-6 md:p-8 overflow-y-auto">
-      <div className="w-full max-w-[840px] flex flex-col gap-8 my-auto">
+    <div className="flex-1 flex flex-col items-center justify-center p-6 md:p-8 overflow-y-auto bg-[#18181B] relative">
+      <div className="w-full max-w-[760px] flex flex-col gap-12 my-auto pb-[180px]">
         {/* Headline */}
-        <div className="text-center space-y-2">
-          <h2 className="text-[32px] md:text-[36px] font-bold text-[#0F172A] tracking-tight leading-tight">
-            Initiate Research Protocol
+        <div className="text-center space-y-3">
+          <h2 className="text-[32px] md:text-[36px] font-bold text-[#F4F4F5] tracking-tight leading-tight">
+            What would you like to research?
           </h2>
-          <p className="text-[16px] md:text-[17px] text-[#45464D] max-w-2xl mx-auto">
-            Define your parameters, input queries, or upload source material to begin synthesis.
+          <p className="text-[16px] md:text-[17px] text-[#A1A1AA] max-w-2xl mx-auto font-medium">
+            Search literature, analyze sources, and synthesize complex questions.
           </p>
         </div>
 
-        {/* Primary Input Card */}
+        {/* Suggested Prompts */}
+        <div className="flex flex-wrap justify-center gap-2 max-w-[640px] mx-auto">
+          {SUGGESTED_VECTORS.map((vector) => (
+            <button
+              key={vector.id}
+              type="button"
+              onClick={() => handleSelectSuggested(vector.query)}
+              className="px-4 py-2 rounded-full border border-[#3F3F46] bg-[#27272A] hover:bg-[#3F3F46] hover:border-[#52525B] text-[#D4D4D8] transition-colors cursor-pointer text-[13px] font-medium"
+            >
+              {vector.title}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Floating Bottom Composer */}
+      <div className="absolute bottom-0 left-0 right-0 p-6 flex justify-center bg-gradient-to-t from-[#18181B] via-[#18181B] to-transparent pointer-events-none">
         <form
           onSubmit={handleSubmit}
-          className="bg-white rounded-lg border border-[#C6C6CD] p-3 flex flex-col focus-within:border-[#0F172A] focus-within:ring-1 focus-within:ring-[#0F172A] transition-all shadow-xs"
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsHoveringDropzone(true);
+          }}
+          onDragLeave={() => setIsHoveringDropzone(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIsHoveringDropzone(false);
+            if (e.dataTransfer.files) {
+              handleFileUpload(e.dataTransfer.files);
+            }
+          }}
+          className={`w-full max-w-[760px] bg-[#27272A] rounded-2xl border ${
+            isHoveringDropzone ? 'border-[#10B981] bg-[#27272A]/80' : 'border-[#3F3F46]'
+          } p-3 flex flex-col shadow-2xl pointer-events-auto transition-colors`}
         >
           <textarea
             value={query}
@@ -65,25 +95,24 @@ export const NewResearchView: React.FC<NewResearchViewProps> = ({ onSynthesize }
                 handleSubmit();
               }
             }}
-            placeholder="State your research objective, thesis question, or technical query here..."
-            className="w-full bg-transparent border-none focus:outline-none focus:ring-0 resize-none min-h-[130px] p-3 text-[16px] text-[#191C1E] placeholder:text-[#76777D] font-sans"
+            placeholder="Ask a research question..."
+            className="w-full bg-transparent border-none focus:outline-none focus:ring-0 resize-none min-h-[96px] p-2 text-[16px] text-[#F4F4F5] placeholder:text-[#A1A1AA] font-sans"
           />
 
-          {/* Attached Files List Pill Chips */}
+          {/* Attached Files */}
           {attachedFiles.length > 0 && (
-            <div className="flex flex-wrap gap-2 p-2 border-t border-[#C6C6CD]/40">
+            <div className="flex flex-wrap gap-2 px-2 pb-2">
               {attachedFiles.map((file) => (
                 <div
                   key={file.id}
-                  className="flex items-center gap-1.5 bg-[#F2F4F6] text-[#0F172A] border border-[#C6C6CD] px-2.5 py-1 rounded-md text-[12px] font-medium"
+                  className="flex items-center gap-1.5 bg-[#18181B] text-[#F4F4F5] border border-[#3F3F46] px-2.5 py-1 rounded-lg text-[12px] font-medium"
                 >
-                  <span className="material-symbols-outlined text-[14px]">description</span>
-                  <span className="truncate max-w-[180px]">{file.name}</span>
-                  <span className="text-[#45464D] text-[10px]">({file.size})</span>
+                  <span className="material-symbols-outlined text-[14px] text-[#10B981]">description</span>
+                  <span className="truncate max-w-[150px]">{file.name}</span>
                   <button
                     type="button"
                     onClick={() => removeFile(file.id)}
-                    className="hover:text-red-600 ml-1 text-[14px]"
+                    className="hover:text-red-400 ml-1 text-[14px]"
                   >
                     ×
                   </button>
@@ -92,39 +121,9 @@ export const NewResearchView: React.FC<NewResearchViewProps> = ({ onSynthesize }
             </div>
           )}
 
-          {/* Controls Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 p-2 border-t border-[#C6C6CD]/40 mt-1">
+          {/* Toolbar */}
+          <div className="flex flex-wrap items-center justify-between gap-2 px-2 pt-2 border-t border-[#3F3F46]">
             <div className="flex flex-wrap items-center gap-2">
-              {/* Research Mode Selection Toggle */}
-              <div className="flex items-center bg-[#F2F4F6] rounded-md p-1 border border-[#C6C6CD]">
-                <button
-                  type="button"
-                  onClick={() => setMode('quick')}
-                  className={`px-3 py-1.5 rounded-md text-[11px] font-bold tracking-wider uppercase flex items-center gap-1.5 transition-all cursor-pointer ${
-                    mode === 'quick'
-                      ? 'bg-white border border-[#C6C6CD] shadow-xs text-[#0F172A]'
-                      : 'text-[#45464D] hover:text-[#0F172A]'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[14px]">speed</span>
-                  Quick Scan
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setMode('deep')}
-                  className={`px-3 py-1.5 rounded-md text-[11px] font-bold tracking-wider uppercase flex items-center gap-1.5 transition-all cursor-pointer ${
-                    mode === 'deep'
-                      ? 'bg-white border border-[#C6C6CD] shadow-xs text-[#0F172A]'
-                      : 'text-[#45464D] hover:text-[#0F172A]'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[14px]">plumbing</span>
-                  Deep Dive
-                </button>
-              </div>
-
-              {/* Attach References Button */}
               <input
                 type="file"
                 ref={fileInputRef}
@@ -136,91 +135,42 @@ export const NewResearchView: React.FC<NewResearchViewProps> = ({ onSynthesize }
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-1.5 px-3 py-2 text-[#45464D] hover:text-[#0F172A] hover:bg-[#E0E3E5] rounded-md transition-colors text-[13px] font-medium cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-[#A1A1AA] hover:text-[#F4F4F5] hover:bg-[#3F3F46] rounded-lg transition-colors text-[13px] font-medium cursor-pointer"
               >
-                <span className="material-symbols-outlined text-[18px]">upload_file</span>
-                Attach References
+                <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                Attach
               </button>
+
+              <div className="h-4 w-px bg-[#3F3F46] mx-1"></div>
+
+              <div className="relative group">
+                <select
+                  value={mode}
+                  onChange={(e) => setMode(e.target.value as ResearchMode)}
+                  className="appearance-none bg-transparent text-[#A1A1AA] hover:text-[#F4F4F5] px-3 py-1.5 pr-8 rounded-lg transition-colors hover:bg-[#3F3F46] cursor-pointer text-[13px] font-medium outline-none"
+                >
+                  <option value="quick" className="bg-[#27272A]">Quick Scan</option>
+                  <option value="deep" className="bg-[#27272A]">Deep Dive</option>
+                </select>
+                <span className="material-symbols-outlined text-[16px] absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-[#A1A1AA] group-hover:text-[#F4F4F5]">
+                  arrow_drop_down
+                </span>
+              </div>
             </div>
 
-            {/* Submit Action Button */}
             <button
               type="submit"
               disabled={!query.trim()}
-              className={`px-6 py-2.5 rounded-md font-bold text-[12px] tracking-wider uppercase flex items-center gap-2 transition-all cursor-pointer shadow-xs ${
+              className={`p-2 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${
                 query.trim()
-                  ? 'bg-[#0F172A] text-white hover:bg-slate-800'
-                  : 'bg-[#C6C6CD] text-white cursor-not-allowed'
+                  ? 'bg-[#F4F4F5] text-[#18181B] hover:bg-[#D4D4D8]'
+                  : 'bg-[#3F3F46] text-[#A1A1AA] cursor-not-allowed'
               }`}
             >
-              Synthesize
-              <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+              <span className="material-symbols-outlined text-[20px]">arrow_upward</span>
             </button>
           </div>
         </form>
-
-        {/* Suggested Vectors Section */}
-        <div>
-          <h3 className="text-[11px] font-bold tracking-wider text-[#45464D] uppercase mb-4">
-            Suggested Vectors
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {SUGGESTED_VECTORS.map((vector) => (
-              <button
-                key={vector.id}
-                type="button"
-                onClick={() => handleSelectSuggested(vector.query)}
-                className="text-left p-4 rounded-md bg-white border border-[#C6C6CD] hover:border-[#0F172A] hover:bg-[#F8FAFC] transition-all group cursor-pointer"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="bg-[#D5E3FD] text-[#0D1C2F] p-2 rounded-md shrink-0">
-                    <span className="material-symbols-outlined text-[20px]">{vector.icon}</span>
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-[15px] text-[#0F172A] group-hover:text-[#2563EB] transition-colors leading-snug">
-                      {vector.title}
-                    </h4>
-                    <p className="text-[13px] text-[#45464D] mt-1 line-clamp-2 leading-relaxed">
-                      {vector.description}
-                    </p>
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Drag and Drop Zone */}
-        <div
-          onDragOver={(e) => {
-            e.preventDefault();
-            setIsHoveringDropzone(true);
-          }}
-          onDragLeave={() => setIsHoveringDropzone(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setIsHoveringDropzone(false);
-            handleFileUpload(e.dataTransfer.files);
-          }}
-          onClick={() => fileInputRef.current?.click()}
-          className={`border-2 border-dashed rounded-lg p-8 flex flex-col items-center justify-center text-center transition-colors cursor-pointer ${
-            isHoveringDropzone
-              ? 'border-[#0F172A] bg-[#E0E3E5]'
-              : 'border-[#C6C6CD] bg-[#F2F4F6] hover:bg-[#E0E3E5]/70'
-          }`}
-        >
-          <div className="bg-white p-3 rounded-full shadow-xs border border-[#C6C6CD] mb-3">
-            <span className="material-symbols-outlined text-[24px] text-[#0F172A]">
-              folder_open
-            </span>
-          </div>
-          <h4 className="font-bold text-[18px] text-[#0F172A] mb-1">
-            Upload Source Material
-          </h4>
-          <p className="text-[13px] text-[#45464D] max-w-md leading-relaxed">
-            Drag and drop PDFs, datasets (CSV/JSON), or text files to establish a localized knowledge base for this session.
-          </p>
-        </div>
       </div>
     </div>
   );
